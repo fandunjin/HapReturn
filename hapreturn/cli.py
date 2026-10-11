@@ -83,31 +83,10 @@ def union_length(intervals):
 
 
 def paf_intervals(path, records, min_mapq, min_aln_len):
+    from .evidence import read_paf
     result = defaultdict(list)
-    with open(path, encoding="utf-8") as handle:
-        for number, line in enumerate(handle, 1):
-            if not line.strip():
-                continue
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) < 12:
-                raise ValueError(f"Malformed PAF {path}:{number}")
-            try:
-                target = fields[5]
-                target_len, start, end = map(int, fields[6:9])
-                aln_len, mapq = int(fields[10]), int(fields[11])
-            except ValueError as exc:
-                raise ValueError(f"Invalid PAF coordinates {path}:{number}") from exc
-            if target not in records:
-                raise ValueError(f"PAF target {target} absent from final FASTA")
-            expected_length = records[target] if isinstance(records[target], int) else len(records[target])
-            if target_len != expected_length or not 0 <= start < end <= target_len:
-                raise ValueError(f"PAF target coordinates/length disagree at {path}:{number}")
-            # Supplementary chains may cover distinct pieces of a scaffold;
-            # secondary hits duplicate loci and must not vote again.
-            if "tp:A:S" in fields[12:]:
-                continue
-            if mapq >= min_mapq and aln_len >= min_aln_len:
-                result[target].append((start, end))
+    for hit in read_paf(path, records, min_mapq, min_aln_len):
+        result[hit.target].append((hit.start, hit.end))
     return result
 
 
@@ -306,8 +285,8 @@ def run():
     output_names += [f"{label}_to_final.paf" for label, (kind, path) in sources.items() if kind == "fasta"]
     output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv"]
     if not args.no_plots:
-        output_names += ["report.html", "window_provenance.tsv"]
-        output_names += [f"{name}.{ext}" for name in ("coverage", "assignment", "tracks", "summary", "overview") for ext in ("png", "svg", "pdf")]
+        output_names += ["report.html", "window_provenance.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
+                         "partition.pdf", "alignment_matrix.pdf", "hap_comparison.pdf"]
         size = args.plot_window_size or max(1, (max(records.values()) + 99) // 100)
         if sum((length + size - 1) // size for length in records.values()) > 200000:
             raise ValueError("Too many plotting windows; increase --plot-window-size")
@@ -321,8 +300,14 @@ def run():
             paf = args.out_dir / f"{label}_to_final.paf"
             run_minimap(args.final_fasta, path, paf, args.threads, args.preset)
         paf_paths[label] = paf
-    intervals = {label: paf_intervals(path, all_records, args.min_mapq, args.min_aln_len)
-                 for label, path in paf_paths.items()}
+    from .evidence import read_paf
+    alignments = []
+    intervals = {label: defaultdict(list) for label in sources}
+    for label, path in paf_paths.items():
+        for hit in read_paf(path, all_records, args.min_mapq, args.min_aln_len, label):
+            intervals[hit.source][hit.target].append((hit.start, hit.end))
+            if not args.no_plots:
+                alignments.append(hit)
     rows, assigned = [], {label: [] for label in list(sources) + ["unresolved"]}
     assignments = {}
     for name in names:
@@ -368,7 +353,13 @@ def run():
     if not args.no_plots:
         from .visualize import make_report
         make_report(args.out_dir, sources, records, intervals, assignments, all_records,
-                    args.min_covered_fraction, args.dominance, args.plot_window_size)
+                    args.min_covered_fraction, args.dominance, args.plot_window_size, alignments)
+        if args.force:
+            for stem in ("coverage", "assignment", "tracks", "summary", "overview"):
+                for extension in ("png", "svg", "pdf"):
+                    legacy = args.out_dir / f"{stem}.{extension}"
+                    if legacy.is_file() and legacy.resolve() not in input_paths:
+                        legacy.unlink()
     print(" ".join(f"{label}={len(members)}" for label, members in assigned.items()) + f" groups_to_review={len(qc_errors)}")
     if (assigned["unresolved"] or qc_errors) and not args.allow_unresolved:
         print("Review assignment.tsv and group_qc.tsv; use --allow-unresolved to accept partial output", file=sys.stderr)

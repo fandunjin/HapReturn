@@ -50,7 +50,17 @@ For each target window, intersect the union of accepted alignment intervals from
 each source with the window. Apply the chromosome coverage and dominance
 thresholds to these local counts. The final window uses its actual length.
 Whole-chromosome labels remain based on whole-chromosome union coverage.
-Coverage is displayed separately for each source, and scatter point area scales
-with target length. Summary plots include all output sequences, including
+Coverage is displayed independently for each source. Chromosome outlines and
+original-to-curated ribbons use shared length scales. Summary plots include all output sequences, including
 unresolved and unselected records; coverage plots include selected records only.
 Window coordinates in the evidence table are zero-based and half-open.
+
+Matrix cells equal the union of target intervals from one original contig divided
+by target chromosome length; contig identifiers are namespaced by original
+source. Rows are grouped by source and ordered by the best-supported target,
+then identifier. Every retained contig with a selected target is included.
+Ribbons map PAF query and target intervals to their respective sequence bodies,
+reversing target endpoints for minus-strand alignments. Inter-sequence gaps reserve
+label space and are excluded from the shared bp scale. Separate PDFs and one
+HTML report are exported; the partition PDF contains source evidence and
+chromosome ideograms as two figures, with additional pages for large inputs.

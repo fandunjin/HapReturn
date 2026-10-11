@@ -6,3 +6,5 @@ recursive-include examples *.fa *.paf *.tsv *.txt *.md *.py
 recursive-include tests *.py
 
 recursive-include docs/images *.png
+
+recursive-include scripts *.py

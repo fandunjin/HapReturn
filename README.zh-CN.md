@@ -38,24 +38,42 @@ hapreturn \
 
 预期：16 条输入染色体回分为 hap1、hap2 各 8 条。1 bp 阈值仅用于此合成示例。
 
-## 可视化
+## 论文图与 HTML 报告
 
-运行后自动生成四类图及四面板总览，均提供 PNG、SVG、PDF：
+默认只导出三个独立 PDF 和一个完整 HTML 报告：
 
-- 染色体来源覆盖度：并列显示两个来源的独立覆盖比例。
-- 分配散点图：颜色表示分配结果，点大小表示染色体长度。
-- 染色体窗口来源图：展示沿染色体的局部来源证据。
-- 输出统计图：分别展示两套来源、待确认及未选入记录的数量与总长度。
+| 文件 | 内容 |
+|---|---|
+| `partition.pdf` | 两张图：来源覆盖证据及数量/长度统计；按长度比例绘制的染色体来源图 |
+| `alignment_matrix.pdf` | 原始 contig × 调整后染色体的比对矩阵热图 |
+| `hap_comparison.pdf` | 原始 hifiasm hap 与调整后 hap 的染色体来源对应图 |
+| `report.html` | 汇总全部图形，提供窗口悬停与染色体表筛选 |
 
-![分型结果示例](docs/images/overview.png)
+PDF 使用嵌入式可编辑字体、5–7 pt 无衬线文字和 183 mm 页宽，大规模数据
+自动分页保持标签可读。蓝色、橙色始终表示两个原始来源，灰色表示待确认。
+染色体按实际长度比例绘制圆端轮廓，不推测着丝粒位置。不会另存 PNG 或 SVG。
 
-打开 `report.html` 可离线查看图表，悬停查看窗口坐标及两来源覆盖量，
-并按名称或来源筛选染色体表。灰色窗口表示证据未能确定来源。
-`window_provenance.tsv` 保存逐窗口去重覆盖量，坐标为从 0 开始的左闭右开区间。
+![合成数据染色体来源示例](docs/images/chromosome_provenance.png)
 
 `--plot-window-size N` 设置窗口宽度（bp），默认按最长染色体约 100 个窗口
-自动选择；`--no-plots` 可关闭可视化。窗口使用与整条染色体相同的覆盖度和
-优势比例阈值进行局部计算。所有倍性均使用同一套两来源图表。
+自动选择；`--no-plots` 关闭可视化。窗口表 `window_provenance.tsv` 保存去重
+覆盖量，坐标从 0 开始、左闭右开；矩阵和连接证据另存为
+`alignment_matrix.tsv`、`alignment_links.tsv`。所有倍性使用相同绘图逻辑。
+
+### 独立绘制原始与调整后 hap 的对应关系
+
+提供原始 contig 到最终组装的两个 PAF，以及已有的分配表：
+
+```bash
+hapreturn-chromosomes \
+  --final-fasta curated.fa --hap1-paf hap1.paf --hap2-paf hap2.paf \
+  --assignment result/assignment.tsv --out-pdf original_to_curated.pdf
+```
+
+安装后也可使用 `python scripts/plot_chromosomes.py`，参数相同。
+左侧为有有效比对的原始 hifiasm contig，右侧为调整后染色体与 hap 标签；
+连接带颜色表示原始来源，并保留比对区间与正反方向。两个侧面的长度比例一致。
+自定义来源可加 `--source-labels FIRST SECOND`；过滤阈值应与分型时一致。
 
 ## 结果与参数
 

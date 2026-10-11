@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Replace the four-panel overview with two publication figures in partition.pdf.
+- Export independent alignment-matrix and original-to-curated correspondence PDFs and one complete HTML report.
+- Add length-scaled chromosome ideograms, target-normalized contig matrices, oriented ribbons and their source tables.
+- Add the hapreturn-chromosomes command and standalone chromosome script.
+- Use bounded publication page sizes, embedded editable fonts and automatic pagination.
+
 ## 0.3.0
 
 - Automatically export source coverage, assignment, window provenance and output summary figures in PNG, SVG and PDF.

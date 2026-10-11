@@ -17,3 +17,4 @@ jobs:
       - run: hapreturn --version
       - run: hapreturn --final-fasta examples/final.fa --hap1-paf examples/hap1.paf --hap2-paf examples/hap2.paf --chromosome-list examples/chromosomes.txt --homolog-groups examples/groups.tsv --ploidy 4 --hap1-per-group 2 --min-aln-len 1 --out-dir example_output
       - run: hapreturn --final-fasta examples/octoploid/final.fa --hap1-paf examples/octoploid/hap1.paf --hap2-paf examples/octoploid/hap2.paf --min-aln-len 1 --out-dir octoploid_output
+      - run: hapreturn-chromosomes --final-fasta examples/octoploid/final.fa --hap1-paf examples/octoploid/hap1.paf --hap2-paf examples/octoploid/hap2.paf --assignment octoploid_output/assignment.tsv --min-aln-len 1 --out-pdf standalone_chromosomes.pdf

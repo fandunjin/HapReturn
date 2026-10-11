@@ -19,7 +19,7 @@ original hap1 + original hap2 -> merge -> scaffold and curate -> final 2n
 ## Install
 
 Requires Python 3.9+. Install minimap2 to align FASTA inputs; existing PAFs can
-be processed directly without additional Python dependencies.
+be processed without minimap2. Matplotlib is installed with HapReturn.
 
 ```bash
 python -m pip install .
@@ -64,24 +64,34 @@ hapreturn \
 Expected: 16 input chromosomes split into 8 hap1 and 8 hap2 chromosomes.
 The 1 bp cutoff is for this small synthetic example.
 
-## Visualization
+## Publication figures
 
-Each run automatically exports a four-panel overview and individual source
-coverage, assignment scatter, chromosome-window and output-summary figures in
-PNG, SVG and PDF. Open `report.html` for a self-contained report with window
-hover details and a searchable, source-filtered assignment table.
+Each run writes **three independent PDFs and one self-contained HTML report**:
 
-![Example source recovery report](docs/images/overview.png)
+| File | Contents |
+|---|---|
+| `partition.pdf` | Two figures: source support with count/length summaries; length-scaled chromosome provenance ideograms |
+| `alignment_matrix.pdf` | Original contig × curated chromosome heatmap, with source and recovered-assignment keys |
+| `hap_comparison.pdf` | Original hifiasm contigs linked to recovered chromosomes by oriented, coordinate-aware ribbons |
+| `report.html` | All figures, window hover details and a searchable assignment table |
 
-Coverage bars show each source independently because their aligned regions may
-overlap. Point area scales with chromosome length. Window labels use the same
-coverage and dominance thresholds as chromosome assignments, applied locally;
-gray windows have unresolved evidence. Counts and total lengths are displayed
-separately. All ploidies use the same two-source visualization.
+The PDFs use editable, embedded TrueType text, 5–7 pt sans-serif labels and
+183 mm page width. Large datasets are paginated at readable font sizes; the
+complete matrix and links are retained as TSV. PNG/SVG files are not emitted.
+Coverage and output lengths use separate axes. Blue/orange always encode the
+two original sources; gray denotes unresolved evidence. Chromosome outlines
+have rounded sequence ends without an inferred centromere. All ploidies use
+the same two-source logic and shared length scales.
 
-`--plot-window-size N` sets the window width in bases (default: approximately
-100 windows on the longest chromosome). `--no-plots` skips report generation.
-To reproduce the illustrated synthetic report:
+![Synthetic chromosome provenance example](docs/images/chromosome_provenance.png)
+
+`--plot-window-size N` sets window width in bp (default: about 100 windows on
+the longest chromosome); `--no-plots` skips visualization. Window coverage is
+calculated from interval unions, using the same local coverage/dominance
+thresholds. Reports are generated even when assignment QC returns exit code 2.
+See [figure design and source data](docs/figure-design.md).
+
+Reproduce the synthetic demonstration:
 
 ```bash
 python examples/visualization/generate.py demo_input
@@ -89,9 +99,23 @@ hapreturn --final-fasta demo_input/final.fa --hap1-paf demo_input/hap1.paf \
   --hap2-paf demo_input/hap2.paf --min-aln-len 1 --allow-unresolved --out-dir demo_report
 ```
 
-`window_provenance.tsv` contains union-covered bases per source for each
-zero-based, half-open window. Reports are also generated when assignment QC
-returns exit code 2.
+### Standalone original-to-curated chromosome plot
+
+Use the two original-to-curated PAFs and an existing HapReturn assignment table:
+
+```bash
+hapreturn-chromosomes \
+  --final-fasta curated.fa --hap1-paf hap1.paf --hap2-paf hap2.paf \
+  --assignment result/assignment.tsv --out-pdf original_to_curated.pdf
+```
+
+The same command is available as `python scripts/plot_chromosomes.py` after
+installation. `--source-labels FIRST SECOND` supports two custom source names.
+Set `--min-mapq` and `--min-aln-len` to the thresholds used for assignment.
+The original side shows accepted aligned contigs, with original hap labels;
+the curated side shows chromosome assignments. Ribbon endpoints retain PAF
+query/target coordinates and strand. Off-source links show sequence similarity,
+not a measurement of transferred bases.
 
 ## Parameters
 
@@ -105,6 +129,8 @@ returns exit code 2.
 | `--threads` | 8 | minimap2 threads |
 | `--allow-unresolved` | off | Accept partial results |
 | `--force` | off | Reuse a nonempty output directory |
+| `--plot-window-size` | auto | Source window width in bp |
+| `--no-plots` | off | Skip PDFs, HTML and visualization source tables |
 
 Optional `--homolog-groups`, `--ploidy` and source-copy counts provide additional
 group checks; they do not change the assignment logic. Exactly two named sources
@@ -121,6 +147,9 @@ FASTA inputs are uncompressed and sequence output is streamed.
 | `assignment.tsv` | Source coverage and chromosome assignments |
 | `summary.tsv` | Sequence counts and total bases per output |
 | `group_qc.tsv` | Optional homolog-group checks |
+| `window_provenance.tsv` | Local source coverage and labels, zero-based half-open coordinates |
+| `alignment_matrix.tsv` | Full target-normalized contig-to-chromosome coverage matrix |
+| `alignment_links.tsv` | Original source, query/target coordinates, strand and recovered assignment |
 | `hap1_to_final.paf`, `hap2_to_final.paf` | Alignments generated from FASTA inputs |
 
 Exit codes: 0 for success, 1 for an input/alignment error, 2 for unresolved

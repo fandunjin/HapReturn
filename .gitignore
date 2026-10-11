@@ -10,3 +10,6 @@ example_result/
 octoploid_output/
 octoploid_two_source_output/
 *.partial
+
+demo_input/
+demo_report/
