@@ -264,6 +264,8 @@ def parse_args():
     parser.add_argument("--preset", default="asm5")
     parser.add_argument("--allow-unresolved", action="store_true")
     parser.add_argument("--force", action="store_true", help="Allow reuse of a nonempty output directory")
+    parser.add_argument("--no-plots", action="store_true", help="Skip visualization outputs")
+    parser.add_argument("--plot-window-size", type=int, default=0, help="Window size in bp; 0 selects about 100 windows on the longest chromosome")
     return parser.parse_args()
 
 
@@ -275,6 +277,8 @@ def run():
         raise ValueError("ploidy must be positive")
     if args.threads < 1 or args.min_mapq < 0 or args.min_aln_len < 1:
         raise ValueError("threads/min-mapq/min-aln-len out of range")
+    if args.plot_window_size < 0:
+        raise ValueError("plot-window-size must be nonnegative")
     sources = source_config(args)
     quotas = source_quotas(args, sources)
     if args.out_dir.exists() and not args.force and any(args.out_dir.iterdir()):
@@ -301,6 +305,12 @@ def run():
     output_names = [f"{label}.fa" for label in list(sources) + ["unresolved", "unplaced"]]
     output_names += [f"{label}_to_final.paf" for label, (kind, path) in sources.items() if kind == "fasta"]
     output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv"]
+    if not args.no_plots:
+        output_names += ["report.html", "window_provenance.tsv"]
+        output_names += [f"{name}.{ext}" for name in ("coverage", "assignment", "tracks", "summary", "overview") for ext in ("png", "svg", "pdf")]
+        size = args.plot_window_size or max(1, (max(records.values()) + 99) // 100)
+        if sum((length + size - 1) // size for length in records.values()) > 200000:
+            raise ValueError("Too many plotting windows; increase --plot-window-size")
     if any((args.out_dir / name).resolve() in input_paths for name in output_names):
         raise ValueError("An output would overwrite an input; choose a separate output directory")
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -355,6 +365,10 @@ def run():
         for label in list(assigned) + ["unplaced"]:
             members = assigned[label] if label in assigned else [name for name in all_records if name not in records]
             writer.writerow((label, len(members), sum(all_records[name] for name in members)))
+    if not args.no_plots:
+        from .visualize import make_report
+        make_report(args.out_dir, sources, records, intervals, assignments, all_records,
+                    args.min_covered_fraction, args.dominance, args.plot_window_size)
     print(" ".join(f"{label}={len(members)}" for label, members in assigned.items()) + f" groups_to_review={len(qc_errors)}")
     if (assigned["unresolved"] or qc_errors) and not args.allow_unresolved:
         print("Review assignment.tsv and group_qc.tsv; use --allow-unresolved to accept partial output", file=sys.stderr)

@@ -2,5 +2,7 @@ include LICENSE README.md README.zh-CN.md CHANGELOG.md CONTRIBUTING.md
 include .gitignore .gitattributes
 recursive-include .github *.yml
 recursive-include docs *.md
-recursive-include examples *.fa *.paf *.tsv *.txt *.md
+recursive-include examples *.fa *.paf *.tsv *.txt *.md *.py
 recursive-include tests *.py
+
+recursive-include docs/images *.png

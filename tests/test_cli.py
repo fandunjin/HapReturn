@@ -49,7 +49,7 @@ class SplitTests(unittest.TestCase):
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
                                      "--chromosome-list", str(root / "chromosomes.txt"), "--ploidy", "4",
                                      "--homolog-groups", str(root / "groups.tsv"), "--hap1-per-group", "2",
-                                     "--min-aln-len", "1", "--out-dir", str(root / "out")], capture_output=True, text=True)
+                                     "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(">chr1\n", (root / "out/hap1.fa").read_text())
             self.assertIn(">chr3\n", (root / "out/hap1.fa").read_text())
@@ -66,7 +66,7 @@ class SplitTests(unittest.TestCase):
                 (root / f"{label}.paf").write_text(paf(label, "chr1", 100, 0, 80))
             result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
-                                     "--min-aln-len", "1", "--out-dir", str(root / "out")], capture_output=True, text=True)
+                                     "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertIn(">chr1\n", (root / "out/unresolved.fa").read_text())
 
@@ -80,7 +80,7 @@ class SplitTests(unittest.TestCase):
             result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
                                      "--homolog-groups", str(root / "groups.tsv"), "--ploidy", "3",
-                                     "--hap1-per-group", "1", "--min-aln-len", "1", "--out-dir", str(root / "out")],
+                                     "--hap1-per-group", "1", "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / "out/hap1.fa").read_text().count(">"), 1)

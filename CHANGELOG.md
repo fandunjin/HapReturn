@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Automatically export source coverage, assignment, window provenance and output summary figures in PNG, SVG and PDF.
+- Add a portable HTML report with window hover details and assignment filtering.
+- Export window evidence as TSV; add configurable window size and an option to skip plots.
+
 ## 0.2.1
 
 - Use one two-source recovery workflow at every ploidy: 2n to n + n.

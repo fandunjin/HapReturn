@@ -37,7 +37,7 @@ def fixture(root, ploidy, n_sources, n_groups=3, first_source_count=None):
 def run_fixture(root, ploidy, extra=()):
     return subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
                            "--sources", str(root / "sources.tsv"), "--homolog-groups", str(root / "groups.tsv"),
-                           "--ploidy", str(ploidy), "--min-aln-len", "1", "--out-dir", str(root / "out"),
+                           "--ploidy", str(ploidy), "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out"),
                            *extra], text=True, capture_output=True)
 
 
@@ -49,7 +49,7 @@ class PolyploidTests(unittest.TestCase):
                 fixture(root, ploidy, 2)
                 result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
                                          "--hap1-paf", str(root / "copy01.paf"), "--hap2-paf", str(root / "copy02.paf"),
-                                         "--min-aln-len", "1", "--out-dir", str(root / "out")], capture_output=True, text=True)
+                                         "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 recovered = []
                 for label in ("hap1", "hap2"):
@@ -75,7 +75,7 @@ class PolyploidTests(unittest.TestCase):
                                          "--hap1-paf", str(root / "copy01.paf"), "--hap2-paf", str(root / "copy02.paf"),
                                          "--homolog-groups", str(root / "groups.tsv"), "--ploidy", str(ploidy),
                                          "--source-copies", f"hap1={ploidy // 2}", "--source-copies", f"hap2={ploidy // 2}",
-                                         "--min-aln-len", "1", "--out-dir", str(root / "out")], capture_output=True, text=True)
+                                         "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 for label in ("hap1", "hap2"):
                     self.assertEqual((root / f"out/{label}.fa").read_text().count(">"), ploidy // 2 * 3)
@@ -127,7 +127,7 @@ class PolyploidTests(unittest.TestCase):
             args = ["hapreturn", "--final-fasta", str(root / "final.fa"),
                     "--source-fasta", f"sourceOne={root / 'copy01.fa'}",
                     "--source-fasta", f"sourceTwo={root / 'copy02.fa'}",
-                    "--min-aln-len", "1", "--out-dir", str(root / "out")]
+                    "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")]
             for label in ("copy01", "copy02"):
                 (root / f"{label}.fa").write_text(">original\nAAAA\n")
             with patch.object(sys, "argv", args), patch("hapreturn.cli.subprocess.run", side_effect=mock_alignment) as runner:

@@ -64,6 +64,35 @@ hapreturn \
 Expected: 16 input chromosomes split into 8 hap1 and 8 hap2 chromosomes.
 The 1 bp cutoff is for this small synthetic example.
 
+## Visualization
+
+Each run automatically exports a four-panel overview and individual source
+coverage, assignment scatter, chromosome-window and output-summary figures in
+PNG, SVG and PDF. Open `report.html` for a self-contained report with window
+hover details and a searchable, source-filtered assignment table.
+
+![Example source recovery report](docs/images/overview.png)
+
+Coverage bars show each source independently because their aligned regions may
+overlap. Point area scales with chromosome length. Window labels use the same
+coverage and dominance thresholds as chromosome assignments, applied locally;
+gray windows have unresolved evidence. Counts and total lengths are displayed
+separately. All ploidies use the same two-source visualization.
+
+`--plot-window-size N` sets the window width in bases (default: approximately
+100 windows on the longest chromosome). `--no-plots` skips report generation.
+To reproduce the illustrated synthetic report:
+
+```bash
+python examples/visualization/generate.py demo_input
+hapreturn --final-fasta demo_input/final.fa --hap1-paf demo_input/hap1.paf \
+  --hap2-paf demo_input/hap2.paf --min-aln-len 1 --allow-unresolved --out-dir demo_report
+```
+
+`window_provenance.tsv` contains union-covered bases per source for each
+zero-based, half-open window. Reports are also generated when assignment QC
+returns exit code 2.
+
 ## Parameters
 
 | Option | Default | Purpose |

@@ -43,3 +43,14 @@ for source assignment. The output set count is always two.
 The assembly is scanned for identifiers and lengths and then streamed to the
 output files. Original chromosome identifiers are preserved. Each record goes
 to its source set, the unresolved category or the unplaced category.
+
+## Visualization
+
+For each target window, intersect the union of accepted alignment intervals from
+each source with the window. Apply the chromosome coverage and dominance
+thresholds to these local counts. The final window uses its actual length.
+Whole-chromosome labels remain based on whole-chromosome union coverage.
+Coverage is displayed separately for each source, and scatter point area scales
+with target length. Summary plots include all output sequences, including
+unresolved and unselected records; coverage plots include selected records only.
+Window coordinates in the evidence table are zero-based and half-open.
