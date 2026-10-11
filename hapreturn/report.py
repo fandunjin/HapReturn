@@ -55,7 +55,7 @@ def main(argv=None):
                 hits.append(hit)
                 intervals[label][hit.target].append((hit.start, hit.end))
         args.out_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("assignment.tsv", "summary.tsv", "group_qc.tsv"):
+        for name in ("assignment.tsv", "summary.tsv", "group_qc.tsv", "homolog_groups.tsv"):
             source, target = args.result_dir / name, args.out_dir / name
             if source.is_file() and source.resolve() != target.resolve():
                 shutil.copyfile(source, target)

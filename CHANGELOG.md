@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Default to exact equal-copy assignment within homolog groups; require even ploidy and grouped chromosome order or a group table.
+- Maximize total source-covered bases and retain independent labels, constrained labels, group scores, and tie diagnostics.
+- Expand unresolved local windows up to their original gray-run extent with a complete evidence trace.
+- Draw one continuous correspondence figure per recovered source, with height adjusted for label count.
+- Add faint evidence-row guides and plain decimal assembly-length labels.
+- Preserve independent source tracing with --assignment-mode provenance.
+
 ## 0.4.1
 
 - Keep recovered sources on separate chromosome rows and correspondence pages at every source count.

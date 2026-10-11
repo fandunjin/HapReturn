@@ -28,11 +28,11 @@ def stacked_positions(lengths, scale, minimum=0.022, gap=0.005):
     return result
 
 
-def common_scale(left, right):
+def common_scale(left, right, minimum=0.022, gap=0.005):
     lo, hi = 0, 1 / max(list(left.values()) + list(right.values()))
     for _ in range(60):
         middle = (lo + hi) / 2
-        extent = max(sum(max(length * middle, 0.022) + 0.005 for length in side.values()) for side in (left, right))
+        extent = max(sum(max(length * middle, minimum) + gap for length in side.values()) for side in (left, right))
         if extent > 0.95:
             hi = middle
         else:
@@ -57,54 +57,56 @@ def comparison_pages(data, alignments, pdf):
     from matplotlib.patches import PathPatch, Patch
     from .plotting import WIDTH, palette, capsule, save_page, source_blocks
     colors, pages = palette(data.labels), []
-    for offset, (recovered_source, targets) in enumerate(source_blocks(data)):
+    for offset, (recovered_source, targets) in enumerate(source_blocks(data, size=len(data.records))):
         source_members = [n for n in data.records if data.assignments[n] == recovered_source]
         hits = [h for h in alignments if h.target in targets]
         queries = {(h.source, h.query): h.query_length for h in hits}
         queries = dict(sorted(queries.items(), key=lambda item: (data.labels.index(item[0][0]), item[0][1])))
         keys = list(queries)
-        for qoffset in range(0, max(1, len(keys)), 32):
-            subset = keys[qoffset:qoffset + 32]
-            left = {key: queries[key] for key in subset}
-            right = {name: data.records[name] for name in targets}
-            scale = common_scale(left, right)
-            lpos, rpos = stacked_positions(left, scale), stacked_positions(right, scale)
-            fig, ax = plt.subplots(figsize=(WIDTH, 160 / 25.4))
-            fig.subplots_adjust(left=0.025, right=0.975, top=0.84, bottom=0.14)
-            for hit in hits:
-                key = (hit.source, hit.query)
-                if key not in lpos:
-                    continue
-                q0, q1, t0, t1 = ribbon_vertices(hit, lpos[key], rpos[hit.target])
-                verts = [(0.33, q0), (0.46, q0), (0.54, t0), (0.67, t0),
-                         (0.67, t1), (0.54, t1), (0.46, q1), (0.33, q1), (0.33, q0)]
-                codes = [MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4,
-                         MplPath.LINETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, MplPath.CLOSEPOLY]
-                ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=colors[hit.source], edgecolor="none", alpha=0.20, zorder=1))
-            for index, ((source, query), (bottom, height)) in enumerate(lpos.items(), qoffset + 1):
-                capsule(ax, 0.32, bottom, height, 0.02, 0.009, facecolor=colors[source])
-                ax.text(0.295, bottom + height / 2, f"{index}. {source} | {query}", va="center", ha="right", fontsize=5)
-            for target, (bottom, height) in rpos.items():
-                capsule(ax, 0.68, bottom, height, 0.02, 0.009, facecolor=colors[data.assignments[target]])
-                ax.text(0.705, bottom + height / 2, f"{source_members.index(target) + 1}. {target} | {data.assignments[target]}", va="center", fontsize=5)
-            ax.text(0.32, 1.04, "Original hifiasm\naligned contigs", ha="center", fontsize=7)
-            ax.text(0.68, 1.04, "Curated assembly\nrecovered chromosomes", ha="center", fontsize=7)
-            if not hits:
-                ax.text(0.5, 0.55, "No accepted alignments", ha="center", fontsize=7)
-            ax.set(xlim=(0, 1), ylim=(-0.03, 1.1))
-            ax.axis("off")
-            # One shared bp scale applies to both sides; gaps only reserve label space.
-            largest = max(list(left.values()) + list(right.values()))
-            scale_bp = 10 ** max(0, len(str(largest)) - 1)
-            ax.plot([0.05, 0.05], [0.04, 0.04 + scale_bp * scale], color="#333333", lw=1)
-            ax.text(0.065, 0.04 + scale_bp * scale / 2, f"{scale_bp / 1e6:g} Mb", va="center", fontsize=6)
-            fig.text(0.04, 0.97, f"Original hap provenance → recovered {recovered_source} (n = {len(source_members)})", fontsize=7, weight="bold", va="top")
-            fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in data.labels + ["unresolved"]],
-                       loc="upper left", bbox_to_anchor=(0.04, 0.94), ncol=3)
-            fig.text(0.04, 0.055, "Ribbons retain query/target coordinates and strand; color denotes original source. Both sides share a bp scale.\n"
-                     "Each target block contains one recovered source; links from either original source are retained.\n"
-                     f"Recovered {recovered_source}: chromosomes {source_members.index(targets[0]) + 1}–{source_members.index(targets[-1]) + 1} of {len(source_members)}; aligned contigs {qoffset + 1 if keys else 0}–{qoffset + len(subset)} of {len(keys)} in this block.", fontsize=6)
-            pages.append(save_page(fig, pdf, f"comparison_{offset}_{qoffset}"))
+        left = queries
+        right = {name: data.records[name] for name in targets}
+        count = max(len(left), len(right), 1)
+        spacing = min(1, 32 / count)
+        minimum, gap = 0.022 * spacing, 0.005 * spacing
+        scale = common_scale(left, right, minimum, gap)
+        lpos = stacked_positions(left, scale, minimum, gap)
+        rpos = stacked_positions(right, scale, minimum, gap)
+        fig, ax = plt.subplots(figsize=(WIDTH, max(160, 70 + count * 3.5) / 25.4))
+        fig.subplots_adjust(left=0.025, right=0.975, top=0.84, bottom=0.14)
+        for hit in hits:
+            key = (hit.source, hit.query)
+            if key not in lpos:
+                continue
+            q0, q1, t0, t1 = ribbon_vertices(hit, lpos[key], rpos[hit.target])
+            verts = [(0.33, q0), (0.46, q0), (0.54, t0), (0.67, t0),
+                     (0.67, t1), (0.54, t1), (0.46, q1), (0.33, q1), (0.33, q0)]
+            codes = [MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4,
+                     MplPath.LINETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, MplPath.CLOSEPOLY]
+            ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=colors[hit.source], edgecolor="none", alpha=0.20, zorder=1))
+        for index, ((source, query), (bottom, height)) in enumerate(lpos.items(), 1):
+            capsule(ax, 0.32, bottom, height, 0.02, 0.009, facecolor=colors[source])
+            ax.text(0.295, bottom + height / 2, f"{index}. {source} | {query}", va="center", ha="right", fontsize=5)
+        for target, (bottom, height) in rpos.items():
+            capsule(ax, 0.68, bottom, height, 0.02, 0.009, facecolor=colors[data.assignments[target]])
+            ax.text(0.705, bottom + height / 2, f"{source_members.index(target) + 1}. {target} | {data.assignments[target]}", va="center", fontsize=5)
+        ax.text(0.32, 1.04, "Original hifiasm\naligned contigs", ha="center", fontsize=7)
+        ax.text(0.68, 1.04, "Curated assembly\nrecovered chromosomes", ha="center", fontsize=7)
+        if not hits:
+            ax.text(0.5, 0.55, "No accepted alignments", ha="center", fontsize=7)
+        ax.set(xlim=(0, 1), ylim=(-0.03, 1.1))
+        ax.axis("off")
+        # One shared bp scale applies to both sides; gaps only reserve label space.
+        largest = max(list(left.values()) + list(right.values()))
+        scale_bp = 10 ** max(0, len(str(largest)) - 1)
+        ax.plot([0.05, 0.05], [0.04, 0.04 + scale_bp * scale], color="#333333", lw=1)
+        ax.text(0.065, 0.04 + scale_bp * scale / 2, f"{scale_bp / 1e6:g} Mb", va="center", fontsize=6)
+        fig.text(0.04, 0.97, f"Original hap provenance → recovered {recovered_source} (n = {len(source_members)})", fontsize=7, weight="bold", va="top")
+        fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in data.labels + ["unresolved"]],
+                   loc="upper left", bbox_to_anchor=(0.04, 0.94), ncol=3)
+        fig.text(0.04, 0.055, "Ribbons retain query/target coordinates and strand; color denotes original source. Both sides share a bp scale.\n"
+                 "Each target block contains one recovered source; links from either original source are retained.\n"
+                 f"Recovered {recovered_source}: {len(targets)} chromosomes; {len(keys)} accepted original contigs. All records are shown continuously.", fontsize=6)
+        pages.append(save_page(fig, pdf, f"comparison_{offset}"))
     return pages
 
 

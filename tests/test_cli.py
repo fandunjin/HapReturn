@@ -45,7 +45,7 @@ class SplitTests(unittest.TestCase):
             (root / "h1.paf").write_text(paf("h1a", "chr1", 100, 0, 90) + paf("h1b", "chr3", 100, 0, 90)
                                          + paf("repeat", "chr2", 100, 0, 90, secondary=True))
             (root / "h2.paf").write_text(paf("h2a", "chr2", 100, 0, 90) + paf("h2b", "chr4", 100, 0, 90))
-            result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(fasta),
+            result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(fasta),
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
                                      "--chromosome-list", str(root / "chromosomes.txt"), "--ploidy", "4",
                                      "--homolog-groups", str(root / "groups.tsv"), "--hap1-per-group", "2",
@@ -64,7 +64,7 @@ class SplitTests(unittest.TestCase):
             (root / "final.fa").write_text(">chr1\n" + "A" * 100 + "\n")
             for label in ("h1", "h2"):
                 (root / f"{label}.paf").write_text(paf(label, "chr1", 100, 0, 80))
-            result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+            result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
                                      "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
@@ -77,7 +77,7 @@ class SplitTests(unittest.TestCase):
             (root / "groups.tsv").write_text("group_id\tseq_id\nG1\tc1\nG1\tc2\nG1\tc3\n")
             (root / "h1.paf").write_text(paf("a", "c1", 100, 0, 90))
             (root / "h2.paf").write_text(paf("b", "c2", 100, 0, 90) + paf("c", "c3", 100, 0, 90))
-            result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+            result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                                      "--hap1-paf", str(root / "h1.paf"), "--hap2-paf", str(root / "h2.paf"),
                                      "--homolog-groups", str(root / "groups.tsv"), "--ploidy", "3",
                                      "--hap1-per-group", "1", "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")],

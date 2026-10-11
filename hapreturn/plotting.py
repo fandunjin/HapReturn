@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch, Rectangle, Patch
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, StrMethodFormatter
 
 WIDTH = 183 / 25.4
 STYLE = {"font.family": "sans-serif", "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
@@ -99,6 +99,8 @@ def partition_pages(data, pdf):
                        s=13, marker=marker, color=colors[label], label=label, linewidths=0)
         ax.axvline(data.min_coverage, lw=0.6, ls="--", color="#767C85")
         ax.set_yticks(range(len(selected)), [f"{offset + i + 1}. {n}" for i, n in enumerate(selected)])
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", color="#E3E7EC", linewidth=0.45)
         if len(selected) > 48:
             ax.tick_params(axis="y", labelsize=5)
         ax.set(xlim=(-0.02, 1.03), ylim=(len(selected) - 0.5, -0.6), xlabel="Chromosome coverage (fraction)")
@@ -111,11 +113,12 @@ def partition_pages(data, pdf):
             ax.barh(categories, metric, height=0.52, color=[colors[l] for l in categories])
             ax.invert_yaxis()
             ax.set_xlabel(unit)
+            ax.xaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
             ax.tick_params(axis="y", length=0)
             if row == 0:
                 ax.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=4))
             for i, value in enumerate(metric):
-                ax.annotate(f"{value:g}" if row == 0 else f"{value:.3g}", (value, i),
+                ax.annotate(f"{value:,.0f}" if row == 0 else f"{value:,.2f}", (value, i),
                             xytext=(3, 0), textcoords="offset points", va="center", fontsize=6)
             ax.set_xlim(0, max(metric or [0]) * 1.3 or 1)
             panel(ax, "bc"[row], title)
@@ -165,7 +168,7 @@ def partition_pages(data, pdf):
         fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in categories[:3]],
                    loc="upper left", bbox_to_anchor=(0.08, 0.93), ncol=3)
         fig.text(0.05, 0.025, f"Window: {data.window_size:,} bp. Group labels above chromosomes show whole-chromosome assignments.\n"
-                 "Band colors show local source evidence. Rounded ends mark sequence boundaries; scale is shared.", fontsize=6)
+                 "Band colors include expanded-context labels; evidence spans are recorded in window_rescue.tsv.", fontsize=6)
         pages.append(save_page(fig, pdf, f"partition_chromosomes_{offset}"))
     return pages
 

@@ -35,7 +35,7 @@ def fixture(root, ploidy, n_sources, n_groups=3, first_source_count=None):
 
 
 def run_fixture(root, ploidy, extra=()):
-    return subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+    return subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                            "--sources", str(root / "sources.tsv"), "--homolog-groups", str(root / "groups.tsv"),
                            "--ploidy", str(ploidy), "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out"),
                            *extra], text=True, capture_output=True)
@@ -47,7 +47,7 @@ class PolyploidTests(unittest.TestCase):
             with self.subTest(ploidy=ploidy), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
                 root = Path(directory).resolve()
                 fixture(root, ploidy, 2)
-                result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+                result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                                          "--hap1-paf", str(root / "copy01.paf"), "--hap2-paf", str(root / "copy02.paf"),
                                          "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -71,7 +71,7 @@ class PolyploidTests(unittest.TestCase):
             with self.subTest(ploidy=ploidy), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
                 root = Path(directory).resolve()
                 fixture(root, ploidy, 2)
-                result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+                result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                                          "--hap1-paf", str(root / "copy01.paf"), "--hap2-paf", str(root / "copy02.paf"),
                                          "--homolog-groups", str(root / "groups.tsv"), "--ploidy", str(ploidy),
                                          "--source-copies", f"hap1={ploidy // 2}", "--source-copies", f"hap2={ploidy // 2}",
@@ -124,7 +124,7 @@ class PolyploidTests(unittest.TestCase):
                 label = Path(command[-1]).stem
                 stdout.write((root / f"{label}.paf").read_text())
 
-            args = ["hapreturn", "--final-fasta", str(root / "final.fa"),
+            args = ["hapreturn", "--assignment-mode", "provenance", "--final-fasta", str(root / "final.fa"),
                     "--source-fasta", f"sourceOne={root / 'copy01.fa'}",
                     "--source-fasta", f"sourceTwo={root / 'copy02.fa'}",
                     "--min-aln-len", "1", "--no-plots", "--out-dir", str(root / "out")]

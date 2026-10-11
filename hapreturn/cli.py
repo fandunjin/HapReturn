@@ -4,6 +4,7 @@
 import argparse
 import csv
 import re
+import shutil
 import subprocess
 import sys
 from collections import defaultdict
@@ -170,7 +171,7 @@ def source_quotas(args, sources):
         if "hap1" not in sources or "hap1" in quotas:
             raise ValueError("--hap1-per-group requires source hap1 without a duplicate quota")
         quotas["hap1"] = args.hap1_per_group
-    if quotas and not args.homolog_groups:
+    if quotas and not args.homolog_groups and args.assignment_mode == "provenance":
         raise ValueError("Source copy quotas require --homolog-groups")
     if any(count < 0 or (args.ploidy is not None and count > args.ploidy) for count in quotas.values()):
         raise ValueError("Source copy quota must be between zero and ploidy")
@@ -231,8 +232,10 @@ def parse_args():
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--chromosome-count", type=int, help="Select first N FASTA records; required if unplaced records follow")
     parser.add_argument("--chromosome-list", type=Path, help="One chromosome FASTA ID per line; safer when record order is arbitrary")
-    parser.add_argument("--ploidy", type=int, help="Optional size check for each homolog group")
-    parser.add_argument("--homolog-groups", type=Path, help="TSV: group_id, seq_id; used for QC only")
+    parser.add_argument("--assignment-mode", choices=("balanced", "provenance"), default="balanced",
+                        help="balanced: equal-copy group optimization (default); provenance: independent source tracing")
+    parser.add_argument("--ploidy", type=int, help="Even number of chromosomes per homolog group; required in balanced mode")
+    parser.add_argument("--homolog-groups", type=Path, help="TSV: group_id, seq_id; otherwise consecutive FASTA records form groups")
     parser.add_argument("--hap1-per-group", type=int, help="Expected hap1 records per group; used for QC only")
     parser.add_argument("--source-copies", action="append", default=[], metavar="LABEL=N", help="Expected chromosome copies per homolog group for a source; repeat as needed")
     parser.add_argument("--min-mapq", type=int, default=10)
@@ -260,6 +263,12 @@ def run():
         raise ValueError("plot-window-size must be nonnegative")
     sources = source_config(args)
     quotas = source_quotas(args, sources)
+    if args.assignment_mode == "balanced":
+        if args.ploidy is None or args.ploidy < 2 or args.ploidy % 2:
+            raise ValueError("Balanced assignment requires an even --ploidy >=2; use --assignment-mode provenance for independent tracing")
+        if any(count != args.ploidy // 2 for count in quotas.values()):
+            raise ValueError("Balanced assignment requires equal source copy counts")
+        quotas = {label: args.ploidy // 2 for label in sources}
     if args.out_dir.exists() and not args.force and any(args.out_dir.iterdir()):
         raise ValueError("Output directory is nonempty; use a new directory or --force")
     all_records = fasta_lengths(args.final_fasta)
@@ -279,13 +288,16 @@ def run():
     if args.ploidy is not None and len(records) % args.ploidy:
         raise ValueError("Selected chromosome count is not divisible by ploidy")
     groups = load_groups(args.homolog_groups, records, args.ploidy)
+    if args.assignment_mode == "balanced" and not groups:
+        from .assignment import consecutive_groups
+        groups = consecutive_groups(records, args.ploidy)
     input_paths = {args.final_fasta.resolve(), *(path.resolve() for kind, path in sources.values())}
     input_paths.update(path.resolve() for path in (args.sources, args.chromosome_list, args.homolog_groups) if path is not None)
     output_names = [f"{label}.fa" for label in list(sources) + ["unresolved", "unplaced"]]
-    output_names += [f"{label}_to_final.paf" for label, (kind, path) in sources.items() if kind == "fasta"]
-    output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv"]
+    output_names += [f"{label}_to_final.paf" for label in sources]
+    output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv", "homolog_groups.tsv"]
     if not args.no_plots:
-        output_names += ["report.html", "window_provenance.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
+        output_names += ["report.html", "window_provenance.tsv", "window_rescue.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
                          "partition.pdf", "alignment_matrix.pdf", "hap_comparison.pdf"]
         size = args.plot_window_size or max(1, (max(records.values()) + 99) // 100)
         if sum((length + size - 1) // size for length in records.values()) > 200000:
@@ -299,6 +311,9 @@ def run():
         if kind == "fasta":
             paf = args.out_dir / f"{label}_to_final.paf"
             run_minimap(args.final_fasta, path, paf, args.threads, args.preset)
+        else:
+            paf = args.out_dir / f"{label}_to_final.paf"
+            shutil.copyfile(path, paf)
         paf_paths[label] = paf
     from .evidence import read_paf
     alignments = []
@@ -308,8 +323,7 @@ def run():
             intervals[hit.source][hit.target].append((hit.start, hit.end))
             if not args.no_plots:
                 alignments.append(hit)
-    rows, assigned = [], {label: [] for label in list(sources) + ["unresolved"]}
-    assignments = {}
+    rows, support_by_name, evidence, evidence_reason = [], {}, {}, {}
     for name in names:
         length = records[name]
         support = {label: union_length(intervals[label][name]) for label in sources}
@@ -324,23 +338,56 @@ def run():
             reason, label = "low_coverage", "unresolved"
         elif dominant < args.dominance or len(winners) != 1:
             reason, label = "ambiguous_origin", "unresolved"
-        assigned[label].append(name)
-        assignments[name] = label
+        support_by_name[name] = support
+        evidence[name], evidence_reason[name] = label, reason
         rows.append((name, length, *support.values(), f"{covered:.6f}", f"{dominant:.6f}", label, reason))
+    assignments, group_audit = dict(evidence), {}
+    if args.assignment_mode == "balanced":
+        from .assignment import balanced_assignment
+        assignments, group_audit = balanced_assignment(groups, support_by_name, list(sources), args.ploidy)
+    group_of = {name: group for group, members in groups.items() for name in members}
+    assigned = {label: [] for label in list(sources) + ["unresolved"]}
+    for name in names:
+        assigned[assignments[name]].append(name)
     with open(args.out_dir / "assignment.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(("seq_id", "length", *(f"{label}_covered_bp" for label in sources),
-                         "dominant_coverage_fraction", "dominance", "assignment", "reason"))
-        writer.writerows(rows)
+                         "dominant_coverage_fraction", "dominance", "assignment", "reason",
+                         "evidence_assignment", "evidence_reason", "assignment_mode", "group_id",
+                         "assigned_coverage_fraction", "assigned_source_share"))
+        for row in rows:
+            name, label = row[0], assignments[row[0]]
+            selected = support_by_name[name].get(label, 0)
+            total = sum(support_by_name[name].values())
+            reason = ("group_constrained" if label != evidence[name] else evidence_reason[name])
+            writer.writerow((*row[:6], label, reason, evidence[name], evidence_reason[name],
+                             args.assignment_mode, group_of.get(name, ""),
+                             f"{selected / records[name]:.6f}", f"{selected / total if total else 0:.6f}"))
+    with open(args.out_dir / "homolog_groups.tsv", "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(("group_id", "seq_id"))
+        writer.writerows((group, name) for group, members in groups.items() for name in members)
     qc_errors = []
     with open(args.out_dir / "group_qc.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(("group_id", "n_records", *sources, "unresolved", "status"))
+        writer.writerow(("group_id", "n_records", *sources, "unresolved", "status", "review_reason",
+                         "changed_records", "total_support_bp", "optimality_gap_bp"))
         assigned_sets = {label: set(names) for label, names in assigned.items()}
         for group, members in groups.items():
             counts = {label: len(set(members) & assigned_sets[label]) for label in assigned}
             ok = counts["unresolved"] == 0 and all(counts[label] == count for label, count in quotas.items())
-            writer.writerow((group, len(members), *counts.values(), "pass" if ok else "review"))
+            review = []
+            audit = group_audit.get(group, {})
+            changed = sum(assignments[n] != evidence[n] for n in members)
+            if audit.get("tied_optimum"):
+                review.append("tied_optimum")
+            if args.assignment_mode == "balanced" and any(evidence[n] != assignments[n] for n in members):
+                review.append("constraint_changed_evidence")
+            if not ok:
+                review.append("copy_count_or_unresolved")
+            ok = ok and not review
+            writer.writerow((group, len(members), *counts.values(), "pass" if ok else "review", ";".join(review),
+                             changed, audit.get("total_support_bp", ""), audit.get("optimality_gap_bp", "")))
             if not ok:
                 qc_errors.append(group)
     write_partitioned_fasta(args.final_fasta, args.out_dir, sources, assignments)

@@ -1,124 +1,72 @@
 # HapReturn
 
-**Return a merged 2n assembly to two n sets using original hifiasm hap1/hap2 provenance.**
-
-HapReturn aligns the two original hifiasm contig sets to a curated merged
-assembly and recovers the chromosome sets belonging to hap1 and hap2.
-The workflow is identical at any ploidy: **2n → n + n**.
-
-```text
-original hap1 + original hap2 -> merge -> scaffold and curate -> final 2n
-      |                |                                         |
-      +----------------+----------- HapReturn -------------------+
-                                      |
-                              hap1 (n) + hap2 (n)
-```
+**Recover two chromosome sets from a curated merged assembly using original hifiasm provenance and equal-copy homolog-group constraints.**
 
 [中文说明](README.zh-CN.md) · [Method](docs/method.md)
 
 ## Install
 
-Requires Python 3.9+. Install minimap2 to align FASTA inputs; existing PAFs can
-be processed without minimap2. Matplotlib is installed with HapReturn.
+Python 3.9+ is required. Install minimap2 for FASTA alignment; existing PAFs can be reused. Matplotlib is installed automatically.
 
 ```bash
 python -m pip install .
 hapreturn --version
 ```
 
-To redraw an existing result without rerunning minimap2:
+## Input order
 
-```bash
-hapreturn-report --result-dir result --out-dir refreshed_report
-```
+Place chromosome scaffolds first during Juicebox curation and arrange homolog groups consecutively. A tetraploid input has records 1–4 in the first group, 5–8 in the second, and so on. An octoploid input has eight records per group. The equal-copy assumption must match the input design; no fixed subgenome labels are required.
 
-Use the original alignment filters and window settings if they were customized.
-The HTML includes source counts, lengths, numbered rows and live filtered counts.
-Chromosome rows and correspondence target pages are separated by recovered source;
-accepted links from either original source remain visible as local provenance evidence.
+`--chromosome-count N` selects the first N FASTA records without length sorting. Remaining records go to `unplaced.fa`. Alternatively, supply `--homolog-groups groups.tsv` with columns `group_id` and `seq_id`, listing all selected chromosomes exactly once.
 
 ## Run
-
-Use the same command for diploid, tetraploid, octoploid and higher-ploidy inputs:
 
 ```bash
 hapreturn \
   --final-fasta curated.fa \
   --hap1-fasta original.hap1.fa --hap2-fasta original.hap2.fa \
-  --chromosome-count 28 --threads 24 \
+  --chromosome-count 56 --ploidy 4 --threads 24 \
   --out-dir result
 ```
 
-During Juicebox curation, place all chromosome scaffolds first and unplaced
-sequences after them. After exporting the FASTA, use `--chromosome-count N`
-to select its first N records. N is the total chromosome count across both
-source sets: 28 chromosomes have an expected split of 14 + 14. Selection follows
-FASTA record order, without sorting by length. Remaining records go to `unplaced.fa`.
+The default balanced mode assigns two of every four homologs to each source, producing 28 + 28 records. At ploidy eight it assigns 4 + 4 per group. An even `--ploidy` is required.
 
-If chromosome records are interspersed, use `--chromosome-list chromosomes.txt`
-instead, with one chromosome identifier per line. Omit both options to classify
-all records.
-The number n is half of the selected chromosome count: for 64 chromosomes,
-the expected split is 32 + 32. No ploidy setting is required for assignment.
+Use `--hap1-paf` and `--hap2-paf` instead of source FASTAs to reuse alignments. Queries must be original contigs; targets must be the curated assembly. Exactly two custom labels can be supplied with `--source-paf LABEL=PATH` or `--source-fasta LABEL=PATH`.
 
-Use `--hap1-paf` and `--hap2-paf` to supply existing alignments instead of
-source FASTAs. PAF queries are original contigs and targets are the final assembly:
+## Assignment
 
-```bash
-minimap2 -x asm5 --secondary=no -t 24 curated.fa original.hap1.fa > hap1.paf
-```
+After filtering at mapQ ≥10 and alignment length ≥10 kb, merge overlapping target intervals within each source. For each chromosome, C1 and C2 are union-covered target bases. Assign the P/2 largest differences C1−C2 to source 1 and the remainder to source 2. This exactly maximizes total support under the group balance constraint.
 
-Run the bundled two-source example:
+`assignment.tsv` retains final labels, independent evidence labels, group IDs, and final-source coverage. Independent evidence uses coverage ≥0.25 and dominance ≥0.60 by default. `group_qc.tsv` records total support, the optimality gap, changed evidence, and tied optima. Ties use stable input order and are flagged for review; zero evidence is recorded as such.
 
-```bash
-hapreturn \
-  --final-fasta examples/octoploid/final.fa \
-  --hap1-paf examples/octoploid/hap1.paf \
-  --hap2-paf examples/octoploid/hap2.paf \
-  --min-aln-len 1 --out-dir example_result
-```
+Use `--assignment-mode provenance` for independent source tracing with potentially unequal output counts. In that mode, groups and copy quotas provide optional QC only.
 
-Expected: 16 input chromosomes split into 8 hap1 and 8 hap2 chromosomes.
-The 1 bp cutoff is for this small synthetic example.
+## Local unresolved windows
 
-## Publication figures
+Within each original contiguous gray run, expand an unresolved window's evidence context geometrically up to the full run length. Reuse existing PAF evidence, preserve raw coverage, and do not borrow evidence from resolved neighboring runs. Retain gray when the expanded context does not meet coverage and dominance thresholds.
 
-Each run writes **three independent PDFs and one self-contained HTML report**:
+`window_provenance.tsv` records raw and revised labels, method and evidence span. `window_rescue.tsv` records every context attempt. Local labels are separate from chromosome group assignments.
 
-| File | Contents |
-|---|---|
-| `partition.pdf` | Two figures: source support with count/length summaries; length-scaled chromosome provenance ideograms |
-| `alignment_matrix.pdf` | Original contig × curated chromosome heatmap, with source and recovered-assignment keys |
-| `hap_comparison.pdf` | Original hifiasm contigs linked to recovered chromosomes by oriented, coordinate-aware ribbons |
-| `report.html` | All figures, window hover details and a searchable assignment table |
+## Outputs
 
-The PDFs use editable, embedded TrueType text, 5–7 pt sans-serif labels and
-183 mm page width. Large datasets are paginated at readable font sizes; the
-complete matrix and links are retained as TSV. PNG/SVG files are not emitted.
-Coverage and output lengths use separate axes. Blue/orange always encode the
-two original sources; gray denotes unresolved evidence. Chromosome outlines
-have rounded sequence ends without an inferred centromere. All ploidies use
-the same two-source logic and shared length scales.
+- `hap1.fa`, `hap2.fa`, `unresolved.fa`, `unplaced.fa`: sequence partitions.
+- `assignment.tsv`, `summary.tsv`, `homolog_groups.tsv`, `group_qc.tsv`: assignment evidence and checks.
+- `partition.pdf`: source evidence, counts, lengths and chromosome provenance.
+- `alignment_matrix.pdf`: original-contig × curated-chromosome support.
+- `hap_comparison.pdf`: one continuous, height-adaptive correspondence figure per recovered source.
+- `report.html`: all figures, source statistics, window hover and numbered filtering.
 
-![Synthetic chromosome provenance example](docs/images/chromosome_provenance.png)
+The correspondence figures retain accepted links from both original sources. PDFs use editable text; figures are exported as separate PDFs and one portable HTML.
 
-`--plot-window-size N` sets window width in bp (default: about 100 windows on
-the longest chromosome); `--no-plots` skips visualization. Window coverage is
-calculated from interval unions, using the same local coverage/dominance
-thresholds. Reports are generated even when assignment QC returns exit code 2.
-See [figure design and source data](docs/figure-design.md).
-
-Reproduce the synthetic demonstration:
+### Refresh an existing report
 
 ```bash
-python examples/visualization/generate.py demo_input
-hapreturn --final-fasta demo_input/final.fa --hap1-paf demo_input/hap1.paf \
-  --hap2-paf demo_input/hap2.paf --min-aln-len 1 --allow-unresolved --out-dir demo_report
+hapreturn-report --result-dir result --out-dir refreshed_report
 ```
 
-### Standalone original-to-curated chromosome plot
+This preserves chromosome assignments and redraws figures with local window expansion. To apply balanced assignment to an earlier result, rerun the main command with the original curated FASTA, existing PAFs and ploidy, using a new output directory. Reuse any customized filtering and window settings.
 
-Use the two original-to-curated PAFs and an existing HapReturn assignment table:
+### Standalone correspondence figure
 
 ```bash
 hapreturn-chromosomes \
@@ -126,62 +74,12 @@ hapreturn-chromosomes \
   --assignment result/assignment.tsv --out-pdf original_to_curated.pdf
 ```
 
-The same command is available as `python scripts/plot_chromosomes.py` after
-installation. `--source-labels FIRST SECOND` supports two custom source names.
-Set `--min-mapq` and `--min-aln-len` to the thresholds used for assignment.
-The original side shows accepted aligned contigs, with original hap labels;
-the curated side shows chromosome assignments. Ribbon endpoints retain PAF
-query/target coordinates and strand. Off-source links show sequence similarity,
-not a measurement of transferred bases.
-
-## Parameters
-
-| Option | Default | Purpose |
-|---|---:|---|
-| `--min-mapq` | 10 | Minimum PAF mapping quality |
-| `--min-aln-len` | 10000 | Minimum alignment block length in bases |
-| `--dominance` | 0.60 | Minimum dominant-source share of covered bases |
-| `--min-covered-fraction` | 0.25 | Minimum dominant-source chromosome coverage |
-| `--preset` | asm5 | minimap2 preset |
-| `--threads` | 8 | minimap2 threads |
-| `--allow-unresolved` | off | Accept partial results |
-| `--force` | off | Reuse a nonempty output directory |
-| `--plot-window-size` | auto | Source window width in bp |
-| `--no-plots` | off | Skip PDFs, HTML and visualization source tables |
-
-Optional `--homolog-groups`, `--ploidy` and source-copy counts provide additional
-group checks; they do not change the assignment logic. Exactly two named sources
-can also be supplied with `--sources` or `--source-paf` / `--source-fasta`.
-FASTA inputs are uncompressed and sequence output is streamed.
-
-## Outputs
-
-| File | Contents |
-|---|---|
-| `hap1.fa`, `hap2.fa` | Recovered source sets with original chromosome identifiers |
-| `unresolved.fa` | Chromosomes with insufficient or conflicting coverage |
-| `unplaced.fa` | Unselected assembly records |
-| `assignment.tsv` | Source coverage and chromosome assignments |
-| `summary.tsv` | Sequence counts and total bases per output |
-| `group_qc.tsv` | Optional homolog-group checks |
-| `window_provenance.tsv` | Local source coverage and labels, zero-based half-open coordinates |
-| `alignment_matrix.tsv` | Full target-normalized contig-to-chromosome coverage matrix |
-| `alignment_links.tsv` | Original source, query/target coordinates, strand and recovered assignment |
-| `hap1_to_final.paf`, `hap2_to_final.paf` | Alignments generated from FASTA inputs |
-
-Exit codes: 0 for success, 1 for an input/alignment error, 2 for unresolved
-chromosomes or failed group checks. Outputs are retained on exit 2; source
-assignments follow alignment evidence rather than forcing equal counts.
-
-## Tests
+## Synthetic octoploid example
 
 ```bash
-python -m unittest discover -s tests -v
+hapreturn --final-fasta examples/octoploid/final.fa \
+  --hap1-paf examples/octoploid/hap1.paf --hap2-paf examples/octoploid/hap2.paf \
+  --ploidy 8 --min-aln-len 1 --out-dir example_result
 ```
 
-Tests verify the same two-source command at 2-, 4-, 8-, 12- and 16-ploid input
-sizes, together with overlap handling, ambiguous evidence and input checks.
-
-## License
-
-[MIT](LICENSE).
+Exit status: 0 passed; 1 input/runtime error; 2 outputs available with review flags. `--allow-unresolved` accepts review-required output. MIT license.

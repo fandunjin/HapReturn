@@ -19,7 +19,7 @@ class VisualizationTests(unittest.TestCase):
             (root / "empty.paf").write_text("")
             (root / "out").mkdir()
             (root / "out" / "overview.pdf").write_bytes(b"legacy generated figure")
-            result = subprocess.run([sys.executable, "-m", "hapreturn",
+            result = subprocess.run([sys.executable, "-m", "hapreturn", "--assignment-mode", "provenance",
                 "--final-fasta", str(root / "final.fa"),
                 "--hap1-paf", str(root / "empty.paf"), "--hap2-paf", str(root / "empty.paf"),
                 "--force", "--out-dir", str(root / "out")], capture_output=True, text=True)
@@ -131,6 +131,24 @@ class VisualizationTests(unittest.TestCase):
                          "--min-aln-len", "1", "--out-pdf", str(root / "comparison.pdf")])
             self.assertEqual(code, 0)
             self.assertTrue((root / "comparison.pdf").is_file())
+
+    def test_continuous_correspondence_keeps_all_records_per_source(self):
+        from matplotlib.backends.backend_pdf import PdfPages
+        from hapreturn.comparison import comparison_pages
+        from hapreturn.plotting import STYLE
+        import matplotlib.pyplot as plt
+        records = {f"chr{i}": 100 for i in range(80)}
+        assignments = {n: "hap1" if i < 40 else "hap2" for i, n in enumerate(records)}
+        data = prepare_data(["hap1", "hap2"], records, {"hap1": {}, "hap2": {}}, assignments, records)
+        hits = [Alignment(assignments[n], f"q{i}", 100, 0, 100, "+", n, 100, 0, 100) for i, n in enumerate(records)]
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "continuous.pdf"
+            with plt.rc_context(STYLE), PdfPages(path) as pdf:
+                pages = comparison_pages(data, hits, pdf)
+            self.assertEqual(len(pages), 2)
+            self.assertIn("chr39", pages[0])
+            self.assertIn("chr79", pages[1])
+            self.assertEqual(len(re.findall(rb"/Type /Page\b", path.read_bytes())), 2)
 
 
 if __name__ == "__main__":
