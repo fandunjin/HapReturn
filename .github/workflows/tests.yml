@@ -16,5 +16,4 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: hapreturn --version
       - run: hapreturn --final-fasta examples/final.fa --hap1-paf examples/hap1.paf --hap2-paf examples/hap2.paf --chromosome-list examples/chromosomes.txt --homolog-groups examples/groups.tsv --ploidy 4 --hap1-per-group 2 --min-aln-len 1 --out-dir example_output
-      - run: hapreturn --final-fasta examples/octoploid/final.fa --sources examples/octoploid/sources.tsv --homolog-groups examples/octoploid/groups.tsv --ploidy 8 --min-aln-len 1 --out-dir octoploid_output
-      - run: hapreturn --final-fasta examples/octoploid/final.fa --sources examples/octoploid/two_sources.tsv --homolog-groups examples/octoploid/groups.tsv --ploidy 8 --source-copies hap1=4 --source-copies hap2=4 --min-aln-len 1 --out-dir octoploid_two_source_output
+      - run: hapreturn --final-fasta examples/octoploid/final.fa --hap1-paf examples/octoploid/hap1.paf --hap2-paf examples/octoploid/hap2.paf --min-aln-len 1 --out-dir octoploid_output

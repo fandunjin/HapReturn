@@ -1,51 +1,45 @@
 # Method
 
-## Workflow
+## Two-source recovery
 
-1. Supply the curated merged assembly and two or more original source assemblies
-   or their PAF alignments. Source labels are user-defined.
-2. Align each FASTA source to the curated assembly using minimap2 with the
-   selected preset and secondary alignments disabled.
-3. Filter PAF records by mapping quality and alignment length and merge target
-   intervals within each source and chromosome.
-4. Assign each chromosome to the source with the strongest accepted coverage.
-5. Export source FASTAs, chromosome evidence, source summaries and optional
-   homolog-group checks.
+HapReturn recovers two n chromosome sets from a merged 2n assembly by tracing
+chromosomes to the original hifiasm hap1 and hap2 contigs. The assignment method
+is the same at every ploidy; n denotes half of the input chromosome count.
 
-## Coverage and assignment
+1. Supply the curated merged assembly and the two original source assemblies
+   or their PAF alignments.
+2. Align each source to the final assembly with minimap2, with secondary hits
+   disabled.
+3. Filter by mapping quality and alignment length, then merge overlapping target
+   intervals separately for hap1 and hap2 on each chromosome.
+4. Assign each chromosome to its supported original source.
+5. Export the two source FASTAs and the chromosome evidence table.
 
-PAF target coordinates are zero-based, half-open intervals. Let Ci be the
-interval-union coverage from source i, L the chromosome length, and Cmax the
-largest source coverage:
+## Coverage calculation
+
+PAF target coordinates are zero-based, half-open intervals. For chromosome
+length L and interval-union coverages C1 and C2:
 
 ```text
-dominance = Cmax / sum(Ci)
-dominant_coverage_fraction = Cmax / L
+dominance = max(C1, C2) / (C1 + C2)
+dominant_coverage_fraction = max(C1, C2) / L
 ```
 
 A unique source is assigned when dominance is at least 0.60 and its chromosome
 coverage is at least 0.25 by default. Ties, low coverage and insufficient
-dominance produce an unresolved record. Secondary hits marked `tp:A:S` are
-excluded, and overlapping intervals within a source contribute bases once.
+dominance are written to `unresolved.fa`. Secondary PAF hits are excluded and
+overlapping intervals within each source are counted once.
 
-`assignment.tsv` includes one coverage column per input source, followed by
-the dominant coverage fraction, dominance, assigned label and reason.
+The expected chromosome counts are n in each recovered set. Labels follow
+alignment evidence; unresolved records remain separate rather than being forced
+into a source to achieve the expected counts.
 
-## Ploidy and homolog groups
+## Optional checks and export
 
-The coverage calculation operates over an arbitrary number of sources and
-chromosomes. Ploidy P checks that the selected chromosome count is divisible
-by P. With user-supplied homolog groups, each group must contain P chromosomes;
-optional source-copy quotas check how many are assigned to each source.
+User-supplied homolog groups and copy counts can validate a split. The ploidy
+parameter checks chromosome counts and group sizes only; it is not required
+for source assignment. The output set count is always two.
 
-For example, an octoploid group may contain four chromosomes from each of two
-sources, or one chromosome from each of eight known sources. The same rules
-apply to 12-ploid, 16-ploid and higher-ploidy assemblies. Group names and source
-labels are independent of biological subgenome naming.
-
-## Sequence export
-
-The assembly is scanned to collect identifiers and lengths, then streamed to
-the output FASTAs. Sequence bases from the full assembly are not retained in
-memory. Original identifiers are preserved, and each record is exported once
-to its assigned source, unresolved category or unplaced category.
+The assembly is scanned for identifiers and lengths and then streamed to the
+output files. Original chromosome identifiers are preserved. Each record goes
+to its source set, the unresolved category or the unplaced category.

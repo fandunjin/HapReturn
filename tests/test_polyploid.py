@@ -42,24 +42,29 @@ def run_fixture(root, ploidy, extra=()):
 
 
 class PolyploidTests(unittest.TestCase):
-    def test_eight_twelve_sixteen_sources(self):
-        for ploidy in (8, 12, 16):
+    def test_same_command_splits_2n_without_ploidy_options(self):
+        for ploidy in (2, 4, 8, 12, 16):
             with self.subTest(ploidy=ploidy), tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
                 root = Path(directory).resolve()
-                expected = fixture(root, ploidy, ploidy)
-                quotas = [item for label in expected for item in ("--source-copies", f"{label}=1")]
-                result = run_fixture(root, ploidy, quotas)
+                fixture(root, ploidy, 2)
+                result = subprocess.run([sys.executable, "-m", "hapreturn", "--final-fasta", str(root / "final.fa"),
+                                         "--hap1-paf", str(root / "copy01.paf"), "--hap2-paf", str(root / "copy02.paf"),
+                                         "--min-aln-len", "1", "--out-dir", str(root / "out")], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 recovered = []
-                for label, names in expected.items():
-                    text = (root / f"out/{label}.fa").read_text()
-                    actual = [line[1:] for line in text.splitlines() if line.startswith(">")]
-                    self.assertEqual(actual, names)
-                    recovered.extend(actual)
+                for label in ("hap1", "hap2"):
+                    names = [line[1:] for line in (root / f"out/{label}.fa").read_text().splitlines() if line.startswith(">")]
+                    self.assertEqual(len(names), ploidy * 3 // 2)
+                    recovered.extend(names)
                 self.assertEqual(len(set(recovered)), ploidy * 3)
-                with (root / "out/group_qc.tsv").open() as handle:
-                    rows = list(csv.DictReader(handle, delimiter="\t"))
-                self.assertEqual([row["status"] for row in rows], ["pass"] * 3)
+
+    def test_more_than_two_sources_rejected(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory).resolve()
+            fixture(root, 8, 8)
+            result = run_fixture(root, 8)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Exactly two original sources", result.stderr)
 
     def test_two_sources_at_high_ploidy(self):
         for ploidy in (8, 12, 16):
@@ -90,10 +95,10 @@ class PolyploidTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("groups_to_review=3", result.stdout)
 
-    def test_multiple_sources_tie_is_unresolved(self):
+    def test_two_sources_tie_is_unresolved(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory).resolve()
-            fixture(root, 8, 8)
+            fixture(root, 8, 2)
             with (root / "copy02.paf").open("a") as handle:
                 handle.write(alignment("duplicate", "unit1_copy01"))
             result = run_fixture(root, 8)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Recover source-labelled chromosome sets from a curated merged assembly."""
+"""Return a merged 2n assembly to two n source sets using hap1/hap2 provenance."""
 
 import argparse
 import csv
@@ -175,8 +175,8 @@ def source_config(args):
             if not separator or not path:
                 raise ValueError(f"Expected LABEL=PATH for --source-{kind}")
             add(label, Path(path), kind)
-    if len(sources) < 2:
-        raise ValueError("Provide at least two sources using hap1/hap2 options, --sources or --source-paf/--source-fasta")
+    if len(sources) != 2:
+        raise ValueError("Exactly two original sources are required for the 2n-to-n+n split")
     return sources
 
 
@@ -246,9 +246,9 @@ def parse_args():
     parser.add_argument("--hap2-fasta", type=Path)
     parser.add_argument("--hap1-paf", type=Path)
     parser.add_argument("--hap2-paf", type=Path)
-    parser.add_argument("--sources", type=Path, help="TSV with source, path, format (paf/fasta); paths relative to the TSV")
-    parser.add_argument("--source-paf", action="append", default=[], metavar="LABEL=PATH", help="Named PAF source; repeat for additional sources")
-    parser.add_argument("--source-fasta", action="append", default=[], metavar="LABEL=PATH", help="Named FASTA source; repeat for additional sources")
+    parser.add_argument("--sources", type=Path, help="TSV for exactly two original sources: source, path, format (paf/fasta)")
+    parser.add_argument("--source-paf", action="append", default=[], metavar="LABEL=PATH", help="Named PAF input; supply exactly two sources")
+    parser.add_argument("--source-fasta", action="append", default=[], metavar="LABEL=PATH", help="Named FASTA input; supply exactly two sources")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--chromosome-count", type=int, help="Select first N FASTA records; required if unplaced records follow")
     parser.add_argument("--chromosome-list", type=Path, help="One chromosome FASTA ID per line; safer when record order is arbitrary")

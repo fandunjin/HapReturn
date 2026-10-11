@@ -1,11 +1,17 @@
 # Changelog
 
+## 0.2.1
+
+- Use one two-source recovery workflow at every ploidy: 2n to n + n.
+- Require exactly two original sources and simplify the examples and methods.
+- Verify unchanged commands on 2-, 4-, 8-, 12- and 16-ploid input sizes.
+
 ## 0.2.0
 
-- Accept any number of named FASTA or PAF sources and TSV source manifests.
+- Introduce named FASTA/PAF inputs and TSV source manifests.
 - Add source-specific copy counts for arbitrary-ploidy homolog groups.
 - Stream assembly sequences to output files and export per-source summaries.
-- Add octoploid, 12-ploid and 16-ploid tests and an eight-source example.
+- Add octoploid, 12-ploid and 16-ploid tests.
 - Simplify documentation with species-independent methods and source labels.
 
 ## 0.1.0

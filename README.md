@@ -1,95 +1,68 @@
 # HapReturn
 
-**Recover source-labelled chromosome sets after merged assembly scaffolding.**
+**Return a merged 2n assembly to two n sets using original hifiasm hap1/hap2 provenance.**
 
-HapReturn maps original source assemblies to a curated merged assembly and
-partitions its chromosomes by alignment coverage. Use hifiasm hap1/hap2 inputs
-or supply any number of sources with your own labels. Diploid, tetraploid,
-octoploid and higher-ploidy assemblies use the same workflow.
+HapReturn aligns the two original hifiasm contig sets to a curated merged
+assembly and recovers the chromosome sets belonging to hap1 and hap2.
+The workflow is identical at any ploidy: **2n → n + n**.
+
+```text
+original hap1 + original hap2 -> merge -> scaffold and curate -> final 2n
+      |                |                                         |
+      +----------------+----------- HapReturn -------------------+
+                                      |
+                              hap1 (n) + hap2 (n)
+```
 
 [中文说明](README.zh-CN.md) · [Method](docs/method.md)
 
 ## Install
 
-Requires Python 3.9+. Install minimap2 for FASTA alignment; existing PAFs can be
-processed directly without additional Python dependencies.
+Requires Python 3.9+. Install minimap2 to align FASTA inputs; existing PAFs can
+be processed directly without additional Python dependencies.
 
 ```bash
 python -m pip install .
 hapreturn --version
 ```
 
-## Return a merged assembly to hap1 and hap2
+## Run
+
+Use the same command for diploid, tetraploid, octoploid and higher-ploidy inputs:
 
 ```bash
 hapreturn \
   --final-fasta curated.fa \
   --hap1-fasta original.hap1.fa --hap2-fasta original.hap2.fa \
-  --chromosome-list chromosomes.txt \
-  --threads 24 --out-dir source_split
+  --chromosome-list chromosomes.txt --threads 24 \
+  --out-dir result
 ```
 
-Use `--hap1-paf` and `--hap2-paf` for existing alignments instead. PAF queries
-are original source contigs and targets are the curated assembly:
+`chromosomes.txt` lists the 2n chromosome identifiers, one per line. Alternatively,
+`--chromosome-count N` selects the first N FASTA records; omit both options to
+classify all records. Unselected records go to `unplaced.fa`.
+The number n is half of the selected chromosome count: for 64 chromosomes,
+the expected split is 32 + 32. No ploidy setting is required for assignment.
+
+Use `--hap1-paf` and `--hap2-paf` to supply existing alignments instead of
+source FASTAs. PAF queries are original contigs and targets are the final assembly:
 
 ```bash
 minimap2 -x asm5 --secondary=no -t 24 curated.fa original.hap1.fa > hap1.paf
 ```
 
-`chromosomes.txt` lists one chromosome ID per line. Alternatively,
-`--chromosome-count N` selects the first N FASTA records; omit both options to
-classify all records. Unselected records are written to `unplaced.fa`.
-
-## Octoploid and higher-ploidy assemblies
-
-For an octoploid assembly with two source sets, add homolog groups and copy
-counts to the command above:
-
-```text
---ploidy 8 --homolog-groups groups.tsv --source-copies hap1=4 --source-copies hap2=4
-```
-
-`groups.tsv` contains `group_id` and `seq_id` columns, with one chromosome per
-row. Each octoploid group has eight members. Use `--ploidy 12` or `--ploidy 16`
-for higher ploidies and set the source copy counts accordingly. Unequal source
-copy counts are also supported.
-
-For multiple known sources, use a TSV manifest:
-
-```text
-source  path         format
-copy01  copy01.paf   paf
-copy02  copy02.paf   paf
-...
-copy08  copy08.paf   paf
-```
-
-Separate columns with tabs. Paths are relative to the manifest; `format` is
-`paf` or `fasta`. Each source gets its own `<source>.fa` output. Run the bundled
-eight-source, two-group octoploid example:
+Run the bundled two-source example:
 
 ```bash
 hapreturn \
   --final-fasta examples/octoploid/final.fa \
-  --sources examples/octoploid/sources.tsv \
-  --homolog-groups examples/octoploid/groups.tsv --ploidy 8 \
-  --min-aln-len 1 --out-dir octoploid_output
+  --hap1-paf examples/octoploid/hap1.paf \
+  --hap2-paf examples/octoploid/hap2.paf \
+  --min-aln-len 1 --out-dir example_result
 ```
 
-Expected: eight source FASTAs, two chromosomes each. The 1 bp cutoff is for
-the small synthetic example. Source labels describe the supplied assemblies;
-two input sources produce two source sets, even when the organism is octoploid.
-
-Sources can also be supplied individually:
-
-```bash
-hapreturn --final-fasta curated.fa \
-  --source-paf copy01=copy01.paf --source-paf copy02=copy02.paf \
-  --out-dir result
-```
-
-Use repeatable `--source-fasta LABEL=PATH` for FASTA inputs. Ploidy and source
-count have no fixed upper limit in the assignment logic.
+Expected: 16 input chromosomes split into 8 hap1 and 8 hap2 chromosomes.
+The 1 bp cutoff is for this small synthetic example.
 
 ## Parameters
 
@@ -99,32 +72,31 @@ count have no fixed upper limit in the assignment logic.
 | `--min-aln-len` | 10000 | Minimum alignment block length in bases |
 | `--dominance` | 0.60 | Minimum dominant-source share of covered bases |
 | `--min-covered-fraction` | 0.25 | Minimum dominant-source chromosome coverage |
-| `--ploidy` | unset | Check chromosome count and homolog-group size |
-| `--source-copies LABEL=N` | unset | Check source copies per homolog group; repeatable |
 | `--preset` | asm5 | minimap2 preset |
 | `--threads` | 8 | minimap2 threads |
 | `--allow-unresolved` | off | Accept partial results |
 | `--force` | off | Reuse a nonempty output directory |
 
-The existing `--hap1-per-group` option remains available. FASTA inputs are
-uncompressed; output writing streams sequence lines to support large assemblies.
+Optional `--homolog-groups`, `--ploidy` and source-copy counts provide additional
+group checks; they do not change the assignment logic. Exactly two named sources
+can also be supplied with `--sources` or `--source-paf` / `--source-fasta`.
+FASTA inputs are uncompressed and sequence output is streamed.
 
 ## Outputs
 
 | File | Contents |
 |---|---|
-| `<source>.fa` | Assigned chromosomes with their original identifiers |
-| `unresolved.fa` | Chromosomes needing further evidence |
+| `hap1.fa`, `hap2.fa` | Recovered source sets with original chromosome identifiers |
+| `unresolved.fa` | Chromosomes with insufficient or conflicting coverage |
 | `unplaced.fa` | Unselected assembly records |
-| `assignment.tsv` | Source-specific coverage and chromosome assignments |
-| `group_qc.tsv` | Homolog-group source counts and copy-count checks |
+| `assignment.tsv` | Source coverage and chromosome assignments |
 | `summary.tsv` | Sequence counts and total bases per output |
-| `<source>_to_final.paf` | Alignments generated from FASTA inputs |
+| `group_qc.tsv` | Optional homolog-group checks |
+| `hap1_to_final.paf`, `hap2_to_final.paf` | Alignments generated from FASTA inputs |
 
 Exit codes: 0 for success, 1 for an input/alignment error, 2 for unresolved
-chromosomes or failed group checks. Outputs are retained for review on exit 2.
-HapReturn assigns whole chromosome records; local phase-switch analysis can
-be performed downstream.
+chromosomes or failed group checks. Outputs are retained on exit 2; source
+assignments follow alignment evidence rather than forcing equal counts.
 
 ## Tests
 
@@ -132,8 +104,8 @@ be performed downstream.
 python -m unittest discover -s tests -v
 ```
 
-Tests cover two-source and multisource octoploid, 12-ploid and 16-ploid inputs,
-source copy counts, interval overlap, ambiguous evidence and input validation.
+Tests verify the same two-source command at 2-, 4-, 8-, 12- and 16-ploid input
+sizes, together with overlap handling, ambiguous evidence and input checks.
 
 ## License
 

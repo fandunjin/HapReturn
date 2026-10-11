@@ -6,6 +6,7 @@ dist/
 .venv/
 .pytest_cache/
 example_output/
+example_result/
 octoploid_output/
 octoploid_two_source_output/
 *.partial

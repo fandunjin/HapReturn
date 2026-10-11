@@ -1,31 +1,16 @@
-# Octoploid examples
+# Two-source example
 
-The synthetic assembly contains 16 chromosomes in two homolog groups of eight.
-Run these commands from the repository root.
-
-## Two original sources
+The synthetic assembly contains 16 chromosome records. Use the ordinary hap1/hap2
+command from the repository root:
 
 ```bash
 hapreturn \
   --final-fasta examples/octoploid/final.fa \
-  --sources examples/octoploid/two_sources.tsv \
-  --homolog-groups examples/octoploid/groups.tsv --ploidy 8 \
-  --source-copies hap1=4 --source-copies hap2=4 \
-  --min-aln-len 1 --out-dir octoploid_two_source_output
+  --hap1-paf examples/octoploid/hap1.paf \
+  --hap2-paf examples/octoploid/hap2.paf \
+  --min-aln-len 1 --out-dir example_result
 ```
 
-Expected: `hap1.fa` and `hap2.fa`, each with eight chromosomes; four from each
-homolog group. All group checks pass.
-
-## Eight known sources
-
-```bash
-hapreturn \
-  --final-fasta examples/octoploid/final.fa \
-  --sources examples/octoploid/sources.tsv \
-  --homolog-groups examples/octoploid/groups.tsv --ploidy 8 \
-  --min-aln-len 1 --out-dir octoploid_output
-```
-
-Expected: `copy01.fa` through `copy08.fa`, each with two chromosomes; one from
-each homolog group. All group checks pass.
+Expected: `hap1.fa` and `hap2.fa`, each with eight chromosomes; zero unresolved
+records. No ploidy argument is needed. The same command applies to other
+chromosome counts.
