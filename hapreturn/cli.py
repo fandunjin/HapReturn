@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Split a curated merged assembly by its two hifiasm source assemblies.
-
-This labels chromosome-scale sequences by assembly provenance. It does not
-infer subgenomes or phase additional homologues within either source.
-"""
+"""Recover source-labelled chromosome sets from a curated merged assembly."""
 
 import argparse
 import csv
+import re
 import subprocess
 import sys
 from collections import defaultdict
+from contextlib import ExitStack
 from pathlib import Path
 
 from . import __version__
@@ -46,6 +44,29 @@ def load_fasta(path):
     return records
 
 
+def fasta_lengths(path):
+    """Read lengths without retaining chromosome sequences in memory."""
+    lengths = {}
+    name = None
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith(">"):
+                fields = line[1:].split()
+                if not fields:
+                    raise ValueError("Empty FASTA identifier")
+                name = fields[0]
+                if name in lengths:
+                    raise ValueError(f"Duplicate FASTA identifier: {name}")
+                lengths[name] = 0
+            elif line.strip():
+                if name is None:
+                    raise ValueError("Sequence precedes FASTA header")
+                lengths[name] += len(line.strip())
+    if not lengths or any(length == 0 for length in lengths.values()):
+        raise ValueError("FASTA has no records or contains an empty sequence")
+    return lengths
+
+
 def union_length(intervals):
     if not intervals:
         return 0
@@ -78,7 +99,8 @@ def paf_intervals(path, records, min_mapq, min_aln_len):
                 raise ValueError(f"Invalid PAF coordinates {path}:{number}") from exc
             if target not in records:
                 raise ValueError(f"PAF target {target} absent from final FASTA")
-            if target_len != len(records[target]) or not 0 <= start < end <= target_len:
+            expected_length = records[target] if isinstance(records[target], int) else len(records[target])
+            if target_len != expected_length or not 0 <= start < end <= target_len:
                 raise ValueError(f"PAF target coordinates/length disagree at {path}:{number}")
             # Supplementary chains may cover distinct pieces of a scaffold;
             # secondary hits duplicate loci and must not vote again.
@@ -96,6 +118,87 @@ def write_fasta(path, records, names):
             seq = records[name]
             for start in range(0, len(seq), 80):
                 handle.write(seq[start:start + 80] + "\n")
+
+
+def write_partitioned_fasta(path, out_dir, labels, assignments):
+    """Stream FASTA lines directly to the selected source output."""
+    with ExitStack() as stack:
+        handles = {label: stack.enter_context(open(out_dir / f"{label}.fa", "w", encoding="utf-8", newline="\n"))
+                   for label in list(labels) + ["unresolved", "unplaced"]}
+        current = None
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith(">"):
+                    name = line[1:].split()[0]
+                    current = handles[assignments.get(name, "unplaced")]
+                    current.write(f">{name}\n")
+                elif line.strip():
+                    current.write(line.strip() + "\n")
+
+
+def source_config(args):
+    sources = {}
+
+    def add(label, path, kind):
+        reserved = {"unresolved", "unplaced", "con", "prn", "aux", "nul", "group_id", "n_records", "status"}
+        reserved.update(f"{prefix}{number}" for prefix in ("com", "lpt") for number in range(1, 10))
+        if (not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", label)
+                or label.casefold() in reserved
+                or label.casefold() in {name.casefold() for name in sources}):
+            raise ValueError(f"Invalid, reserved or duplicate source label: {label}")
+        if kind not in ("paf", "fasta") or not path.is_file():
+            raise ValueError(f"Invalid source format or missing input: {label}, {path}, {kind}")
+        sources[label] = (kind, path)
+
+    legacy = any(getattr(args, f"hap{i}_{kind}") is not None for i in (1, 2) for kind in ("paf", "fasta"))
+    if legacy and (args.sources or args.source_paf or args.source_fasta):
+        raise ValueError("Use hap1/hap2 options or named sources, not both")
+    if legacy:
+        for label in ("hap1", "hap2"):
+            paf, fasta = getattr(args, f"{label}_paf"), getattr(args, f"{label}_fasta")
+            if (paf is None) == (fasta is None):
+                raise ValueError(f"Provide exactly one of --{label}-paf or --{label}-fasta")
+            add(label, paf if paf is not None else fasta, "paf" if paf is not None else "fasta")
+    if args.sources:
+        with open(args.sources, encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            if not reader.fieldnames or not {"source", "path", "format"} <= set(reader.fieldnames):
+                raise ValueError("Sources TSV requires source, path and format columns")
+            for row in reader:
+                path = Path(row["path"])
+                if not path.is_absolute():
+                    path = args.sources.parent / path
+                add(row["source"], path, row["format"])
+    for kind in ("paf", "fasta"):
+        for spec in getattr(args, f"source_{kind}"):
+            label, separator, path = spec.partition("=")
+            if not separator or not path:
+                raise ValueError(f"Expected LABEL=PATH for --source-{kind}")
+            add(label, Path(path), kind)
+    if len(sources) < 2:
+        raise ValueError("Provide at least two sources using hap1/hap2 options, --sources or --source-paf/--source-fasta")
+    return sources
+
+
+def source_quotas(args, sources):
+    quotas = {}
+    for spec in args.source_copies:
+        label, separator, count = spec.partition("=")
+        if not separator or label not in sources or label in quotas:
+            raise ValueError(f"Invalid or duplicate source quota: {spec}")
+        quotas[label] = int(count)
+    if args.hap1_per_group is not None:
+        if "hap1" not in sources or "hap1" in quotas:
+            raise ValueError("--hap1-per-group requires source hap1 without a duplicate quota")
+        quotas["hap1"] = args.hap1_per_group
+    if quotas and not args.homolog_groups:
+        raise ValueError("Source copy quotas require --homolog-groups")
+    if any(count < 0 or (args.ploidy is not None and count > args.ploidy) for count in quotas.values()):
+        raise ValueError("Source copy quota must be between zero and ploidy")
+    if args.ploidy is not None and (sum(quotas.values()) > args.ploidy or
+            (len(quotas) == len(sources) and sum(quotas.values()) != args.ploidy)):
+        raise ValueError("Source copy quotas disagree with ploidy")
+    return quotas
 
 
 def load_groups(path, records, ploidy):
@@ -143,12 +246,16 @@ def parse_args():
     parser.add_argument("--hap2-fasta", type=Path)
     parser.add_argument("--hap1-paf", type=Path)
     parser.add_argument("--hap2-paf", type=Path)
+    parser.add_argument("--sources", type=Path, help="TSV with source, path, format (paf/fasta); paths relative to the TSV")
+    parser.add_argument("--source-paf", action="append", default=[], metavar="LABEL=PATH", help="Named PAF source; repeat for additional sources")
+    parser.add_argument("--source-fasta", action="append", default=[], metavar="LABEL=PATH", help="Named FASTA source; repeat for additional sources")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--chromosome-count", type=int, help="Select first N FASTA records; required if unplaced records follow")
     parser.add_argument("--chromosome-list", type=Path, help="One chromosome FASTA ID per line; safer when record order is arbitrary")
     parser.add_argument("--ploidy", type=int, help="Optional size check for each homolog group")
     parser.add_argument("--homolog-groups", type=Path, help="TSV: group_id, seq_id; used for QC only")
     parser.add_argument("--hap1-per-group", type=int, help="Expected hap1 records per group; used for QC only")
+    parser.add_argument("--source-copies", action="append", default=[], metavar="LABEL=N", help="Expected chromosome copies per homolog group for a source; repeat as needed")
     parser.add_argument("--min-mapq", type=int, default=10)
     parser.add_argument("--min-aln-len", type=int, default=10000)
     parser.add_argument("--min-covered-fraction", type=float, default=0.25)
@@ -166,24 +273,13 @@ def run():
         raise ValueError("dominance must be in (0.5,1]; min-covered-fraction in [0,1]")
     if args.ploidy is not None and args.ploidy < 1:
         raise ValueError("ploidy must be positive")
-    if args.hap1_per_group is not None and not args.homolog_groups:
-        raise ValueError("--hap1-per-group requires --homolog-groups")
-    if args.hap1_per_group is not None and args.ploidy is not None and not 0 <= args.hap1_per_group <= args.ploidy:
-        raise ValueError("hap1-per-group must lie between 0 and ploidy")
     if args.threads < 1 or args.min_mapq < 0 or args.min_aln_len < 1:
         raise ValueError("threads/min-mapq/min-aln-len out of range")
-    if args.hap1_per_group is not None and args.hap1_per_group < 0:
-        raise ValueError("hap1-per-group must be nonnegative")
-    for label in ("hap1", "hap2"):
-        paf, source = getattr(args, f"{label}_paf"), getattr(args, f"{label}_fasta")
-        if (paf is None) == (source is None):
-            raise ValueError(f"Provide exactly one of --{label}-paf or --{label}-fasta")
-        path = paf if paf is not None else source
-        if not path.is_file():
-            raise ValueError(f"Input file does not exist: {path}")
+    sources = source_config(args)
+    quotas = source_quotas(args, sources)
     if args.out_dir.exists() and not args.force and any(args.out_dir.iterdir()):
         raise ValueError("Output directory is nonempty; use a new directory or --force")
-    all_records = load_fasta(args.final_fasta)
+    all_records = fasta_lengths(args.final_fasta)
     names = list(all_records)
     if args.chromosome_count is not None and args.chromosome_list is not None:
         raise ValueError("Use chromosome-count or chromosome-list, not both")
@@ -197,57 +293,69 @@ def run():
             raise ValueError("chromosome-count exceeds FASTA record count")
         names = names[:args.chromosome_count]
     records = {name: all_records[name] for name in names}
-    unplaced = [name for name in all_records if name not in records]
     if args.ploidy is not None and len(records) % args.ploidy:
         raise ValueError("Selected chromosome count is not divisible by ploidy")
     groups = load_groups(args.homolog_groups, records, args.ploidy)
+    input_paths = {args.final_fasta.resolve(), *(path.resolve() for kind, path in sources.values())}
+    input_paths.update(path.resolve() for path in (args.sources, args.chromosome_list, args.homolog_groups) if path is not None)
+    output_names = [f"{label}.fa" for label in list(sources) + ["unresolved", "unplaced"]]
+    output_names += [f"{label}_to_final.paf" for label, (kind, path) in sources.items() if kind == "fasta"]
+    output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv"]
+    if any((args.out_dir / name).resolve() in input_paths for name in output_names):
+        raise ValueError("An output would overwrite an input; choose a separate output directory")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     paf_paths = {}
-    for label in ("hap1", "hap2"):
-        paf = getattr(args, f"{label}_paf")
-        source = getattr(args, f"{label}_fasta")
-        if paf is None:
-            if source is None:
-                raise ValueError(f"Provide --{label}-paf or --{label}-fasta")
+    for label, (kind, path) in sources.items():
+        paf = path
+        if kind == "fasta":
             paf = args.out_dir / f"{label}_to_final.paf"
-            run_minimap(args.final_fasta, source, paf, args.threads, args.preset)
+            run_minimap(args.final_fasta, path, paf, args.threads, args.preset)
         paf_paths[label] = paf
     intervals = {label: paf_intervals(path, all_records, args.min_mapq, args.min_aln_len)
                  for label, path in paf_paths.items()}
-    rows, assigned = [], {"hap1": [], "hap2": [], "unresolved": []}
+    rows, assigned = [], {label: [] for label in list(sources) + ["unresolved"]}
+    assignments = {}
     for name in names:
-        length = len(records[name])
-        a, b = (union_length(intervals[label][name]) for label in ("hap1", "hap2"))
-        total = a + b
-        dominant = max(a, b) / total if total else 0.0
-        covered = max(a, b) / length
-        label = ("hap1" if a > b else "hap2") if a != b else "unresolved"
+        length = records[name]
+        support = {label: union_length(intervals[label][name]) for label in sources}
+        maximum = max(support.values())
+        total = sum(support.values())
+        dominant = maximum / total if total else 0.0
+        covered = maximum / length
+        winners = [label for label, bp in support.items() if bp == maximum]
+        label = winners[0] if len(winners) == 1 else "unresolved"
         reason = "assigned"
         if covered < args.min_covered_fraction:
             reason, label = "low_coverage", "unresolved"
-        elif dominant < args.dominance or a == b:
+        elif dominant < args.dominance or len(winners) != 1:
             reason, label = "ambiguous_origin", "unresolved"
         assigned[label].append(name)
-        rows.append((name, length, a, b, f"{covered:.6f}", f"{dominant:.6f}", label, reason))
+        assignments[name] = label
+        rows.append((name, length, *support.values(), f"{covered:.6f}", f"{dominant:.6f}", label, reason))
     with open(args.out_dir / "assignment.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(("seq_id", "length", "hap1_covered_bp", "hap2_covered_bp",
+        writer.writerow(("seq_id", "length", *(f"{label}_covered_bp" for label in sources),
                          "dominant_coverage_fraction", "dominance", "assignment", "reason"))
         writer.writerows(rows)
     qc_errors = []
     with open(args.out_dir / "group_qc.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(("group_id", "n_records", "hap1", "hap2", "unresolved", "status"))
+        writer.writerow(("group_id", "n_records", *sources, "unresolved", "status"))
+        assigned_sets = {label: set(names) for label, names in assigned.items()}
         for group, members in groups.items():
-            counts = {label: len(set(members) & set(assigned[label])) for label in assigned}
-            ok = counts["unresolved"] == 0 and (args.hap1_per_group is None or counts["hap1"] == args.hap1_per_group)
-            writer.writerow((group, len(members), counts["hap1"], counts["hap2"], counts["unresolved"], "pass" if ok else "review"))
+            counts = {label: len(set(members) & assigned_sets[label]) for label in assigned}
+            ok = counts["unresolved"] == 0 and all(counts[label] == count for label, count in quotas.items())
+            writer.writerow((group, len(members), *counts.values(), "pass" if ok else "review"))
             if not ok:
                 qc_errors.append(group)
-    for label in assigned:
-        write_fasta(args.out_dir / f"{label}.fa", records, assigned[label])
-    write_fasta(args.out_dir / "unplaced.fa", all_records, unplaced)
-    print(f"hap1={len(assigned['hap1'])} hap2={len(assigned['hap2'])} unresolved={len(assigned['unresolved'])} groups_to_review={len(qc_errors)}")
+    write_partitioned_fasta(args.final_fasta, args.out_dir, sources, assignments)
+    with open(args.out_dir / "summary.tsv", "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(("source", "n_sequences", "total_bp"))
+        for label in list(assigned) + ["unplaced"]:
+            members = assigned[label] if label in assigned else [name for name in all_records if name not in records]
+            writer.writerow((label, len(members), sum(all_records[name] for name in members)))
+    print(" ".join(f"{label}={len(members)}" for label, members in assigned.items()) + f" groups_to_review={len(qc_errors)}")
     if (assigned["unresolved"] or qc_errors) and not args.allow_unresolved:
         print("Review assignment.tsv and group_qc.tsv; use --allow-unresolved to accept partial output", file=sys.stderr)
         return 2
