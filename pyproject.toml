@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hapreturn"
+version = "0.1.0"
+description = "Recover hifiasm hap1/hap2 provenance from curated merged assemblies"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "HapReturn contributors"}]
+keywords = ["genomics", "hifiasm", "HapHiC", "haplotype", "polyploid"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = []
+
+[project.scripts]
+hapreturn = "hapreturn.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hapreturn*"]
