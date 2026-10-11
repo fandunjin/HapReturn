@@ -15,6 +15,12 @@ is the same at every ploidy; n denotes half of the input chromosome count.
 4. Assign each chromosome to its supported original source.
 5. Export the two source FASTAs and the chromosome evidence table.
 
+Place all chromosome scaffolds first during Juicebox curation, then select the
+first N exported FASTA records with `--chromosome-count N`, where N is the total
+chromosome count across both sources. Selection follows FASTA order without
+length sorting; unselected records are exported to `unplaced.fa`. A chromosome
+identifier list is available when records are interspersed.
+
 ## Coverage calculation
 
 PAF target coordinates are zero-based, half-open intervals. For chromosome

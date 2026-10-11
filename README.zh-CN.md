@@ -15,13 +15,17 @@ python -m pip install .
 hapreturn \
   --final-fasta curated.fa \
   --hap1-fasta original.hap1.fa --hap2-fasta original.hap2.fa \
-  --chromosome-list chromosomes.txt --threads 24 \
+  --chromosome-count 28 --threads 24 \
   --out-dir result
 ```
 
-不同倍性使用同一条命令，无需指定倍性。`chromosomes.txt` 每行一个最终组装的
-染色体 ID；也可用 `--chromosome-count N` 选择前 N 条记录，均不指定时分析全部。
-未选入的记录保存在 `unplaced.fa`。
+不同倍性使用同一条命令，无需指定倍性。在 Juicebox 调整时，将全部主要染色体
+排列在最前面，未定位序列放在后面。导出 FASTA 后，用 `--chromosome-count N`
+选择前 N 条记录；N 是两套合计的染色体总数，例如 28 条对应目标两套各 14 条。
+选择依据是 FASTA 记录顺序，不是长度排序。其余记录保存在 `unplaced.fa`。
+
+如果染色体没有排列在最前面，可改用 `--chromosome-list chromosomes.txt`，
+文件每行一个染色体 ID。两个选择参数均不指定时分析全部记录。
 
 已有比对结果可改用 `--hap1-paf`、`--hap2-paf`；query 为原始来源 contig，
 target 为最终组装。默认输出 `hap1.fa`、`hap2.fa` 两套来源。
@@ -59,6 +63,17 @@ PDF 使用嵌入式可编辑字体、5–7 pt 无衬线文字和 183 mm 页宽�
 自动选择；`--no-plots` 关闭可视化。窗口表 `window_provenance.tsv` 保存去重
 覆盖量，坐标从 0 开始、左闭右开；矩阵和连接证据另存为
 `alignment_matrix.tsv`、`alignment_links.tsv`。所有倍性使用相同绘图逻辑。
+
+### 更新已有结果的报告
+
+```bash
+hapreturn-report --result-dir result --out-dir refreshed_report
+```
+
+使用已有分组 FASTA、PAF、`assignment.tsv` 和 `summary.tsv` 重绘，无需重新比对。
+若原分析修改了过滤或窗口参数，重绘时传入相同参数。HTML 包含两套来源的数量、
+长度统计及可筛选的编号表。染色体图每行仅展示一种最终来源，对应图按最终来源
+独立分页；另一原始来源的有效比对仍保留，展示局部混合来源证据。
 
 ### 独立绘制原始与调整后 hap 的对应关系
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- Keep recovered sources on separate chromosome rows and correspondence pages at every source count.
+- Add HTML source counts, assembly lengths, numbered rows and live filtered counts.
+- Number chromosome and correspondence labels while retaining cross-source alignment evidence.
+- Add hapreturn-report to redraw existing results without rerunning minimap2.
+
 ## 0.4.0
 
 - Replace the four-panel overview with two publication figures in partition.pdf.

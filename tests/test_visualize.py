@@ -49,6 +49,10 @@ class VisualizationTests(unittest.TestCase):
             report = (out / "report.html").read_text(encoding="utf-8")
             self.assertIn('chr&lt;&amp;&quot;', report)
             self.assertIn('addEventListener', report)
+            self.assertIn('Recovery summary', report)
+            self.assertIn('<th>No.</th>', report)
+            self.assertIn("#assignments tbody tr", report)
+            self.assertIn('row.cells[1].textContent', report)
             self.assertNotIn('<script src=', report)
             rows = (out / "window_provenance.tsv").read_text(encoding="utf-8")
             self.assertIn('mixed\t0\t10\t10\t0\thap1', rows)
@@ -66,6 +70,37 @@ class VisualizationTests(unittest.TestCase):
         matrix = alignment_matrix(data, hits, intervals)
         self.assertEqual(matrix[("hap1", "same_id")]["chr"], 0.75)
         self.assertEqual(matrix[("hap2", "same_id")]["chr"], 0.25)
+
+    def test_source_blocks_do_not_mix_14_plus_14_or_higher_counts(self):
+        from hapreturn.plotting import source_blocks
+        for count in (14, 32):
+            records = {f"chr{i}": 100 for i in range(count * 2)}
+            assignments = {name: ("hap1" if i % 2 == 0 else "hap2")
+                           for i, name in enumerate(records)}
+            data = prepare_data(["hap1", "hap2"], records,
+                                {"hap1": {}, "hap2": {}}, assignments, records)
+            blocks = source_blocks(data)
+            self.assertEqual(sum(len(names) for _, names in blocks), count * 2)
+            for label, names in blocks:
+                self.assertLessEqual(len(names), 16)
+                self.assertEqual({assignments[n] for n in names}, {label})
+
+    def test_refresh_report_handles_empty_partition_and_keeps_cross_source_links(self):
+        from hapreturn.report import main
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            (root / "hap1.fa").write_text(">chr\nAAAAAAAAAA\n")
+            for label in ("hap2", "unresolved", "unplaced"):
+                (root / f"{label}.fa").write_text("")
+            for label in ("hap1", "hap2"):
+                (root / f"{label}_to_final.paf").write_text("q\t10\t0\t10\t+\tchr\t10\t0\t10\t10\t10\t60\n")
+            (root / "summary.tsv").write_text("source\tn_sequences\ttotal_bp\nhap1\t1\t10\nhap2\t0\t0\nunresolved\t0\t0\nunplaced\t0\t0\n")
+            (root / "assignment.tsv").write_text("seq_id\tlength\tassignment\nchr\t10\thap1\n")
+            out = root / "report"
+            self.assertEqual(main(["--result-dir", str(root), "--out-dir", str(out), "--min-aln-len", "1"]), 0)
+            links = (out / "alignment_links.tsv").read_text()
+            self.assertIn("hap2\tq", links)
+            self.assertTrue((out / "report.html").exists())
 
     def test_reverse_strand_ribbon_endpoints_and_shared_scale(self):
         hit = Alignment("hap1", "q", 100, 10, 30, "+", "chr", 200, 40, 80)

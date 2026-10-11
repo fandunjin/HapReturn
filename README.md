@@ -26,6 +26,17 @@ python -m pip install .
 hapreturn --version
 ```
 
+To redraw an existing result without rerunning minimap2:
+
+```bash
+hapreturn-report --result-dir result --out-dir refreshed_report
+```
+
+Use the original alignment filters and window settings if they were customized.
+The HTML includes source counts, lengths, numbered rows and live filtered counts.
+Chromosome rows and correspondence target pages are separated by recovered source;
+accepted links from either original source remain visible as local provenance evidence.
+
 ## Run
 
 Use the same command for diploid, tetraploid, octoploid and higher-ploidy inputs:
@@ -34,13 +45,19 @@ Use the same command for diploid, tetraploid, octoploid and higher-ploidy inputs
 hapreturn \
   --final-fasta curated.fa \
   --hap1-fasta original.hap1.fa --hap2-fasta original.hap2.fa \
-  --chromosome-list chromosomes.txt --threads 24 \
+  --chromosome-count 28 --threads 24 \
   --out-dir result
 ```
 
-`chromosomes.txt` lists the 2n chromosome identifiers, one per line. Alternatively,
-`--chromosome-count N` selects the first N FASTA records; omit both options to
-classify all records. Unselected records go to `unplaced.fa`.
+During Juicebox curation, place all chromosome scaffolds first and unplaced
+sequences after them. After exporting the FASTA, use `--chromosome-count N`
+to select its first N records. N is the total chromosome count across both
+source sets: 28 chromosomes have an expected split of 14 + 14. Selection follows
+FASTA record order, without sorting by length. Remaining records go to `unplaced.fa`.
+
+If chromosome records are interspersed, use `--chromosome-list chromosomes.txt`
+instead, with one chromosome identifier per line. Omit both options to classify
+all records.
 The number n is half of the selected chromosome count: for 64 chromosomes,
 the expected split is 32 + 32. No ploidy setting is required for assignment.
 

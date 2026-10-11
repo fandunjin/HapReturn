@@ -1,6 +1,5 @@
 """Publication figures: shared scales, editable text and bounded page sizes."""
 import io
-import math
 import xml.etree.ElementTree as ET
 from itertools import groupby
 
@@ -73,6 +72,16 @@ def capsule(ax, x, bottom, length, width, cap, facecolor="none", zorder=3):
     return patch
 
 
+def source_blocks(data, size=16):
+    """Chunk within recovered sources so a row or target page never mixes them."""
+    blocks = []
+    for label in data.labels + ["unresolved"]:
+        members = [name for name in data.records if data.assignments[name] == label]
+        for offset in range(0, len(members), size):
+            blocks.append((label, members[offset:offset + size]))
+    return blocks
+
+
 def partition_pages(data, pdf):
     labels, names, colors = data.labels, list(data.records), palette(data.labels)
     categories = labels + ["unresolved", "unplaced"]
@@ -89,7 +98,7 @@ def partition_pages(data, pdf):
                        [i + (index - 0.5) * 0.22 for i in range(len(selected))],
                        s=13, marker=marker, color=colors[label], label=label, linewidths=0)
         ax.axvline(data.min_coverage, lw=0.6, ls="--", color="#767C85")
-        ax.set_yticks(range(len(selected)), selected)
+        ax.set_yticks(range(len(selected)), [f"{offset + i + 1}. {n}" for i, n in enumerate(selected)])
         if len(selected) > 48:
             ax.tick_params(axis="y", labelsize=5)
         ax.set(xlim=(-0.02, 1.03), ylim=(len(selected) - 0.5, -0.6), xlabel="Chromosome coverage (fraction)")
@@ -116,16 +125,16 @@ def partition_pages(data, pdf):
         pages.append(save_page(fig, pdf, f"partition_evidence_{offset}"))
 
     # Figure 2: source windows inside chromosome outlines, all at one bp scale.
-    ordered = sorted(names, key=lambda n: categories.index(data.assignments[n]))
+    blocks = source_blocks(data)
     maximum = max(data.records.values()) / 1e6
-    for offset in range(0, len(ordered), 64):
-        selected = ordered[offset:offset + 64]
-        nrows = math.ceil(len(selected) / 16)
+    for offset in range(0, len(blocks), 4):
+        selected_blocks = blocks[offset:offset + 4]
+        nrows = len(selected_blocks)
         fig = plt.figure(figsize=(WIDTH, min(170, max(95, 40 + 31 * nrows)) / 25.4))
         grid = fig.add_gridspec(nrows, 1, left=0.10, right=0.98, top=0.82, bottom=0.22, hspace=0.72)
         for row in range(nrows):
             ax = fig.add_subplot(grid[row, 0])
-            subset = selected[row * 16:(row + 1) * 16]
+            assignment, subset = selected_blocks[row]
             for x, name in enumerate(subset):
                 length = data.records[name] / 1e6
                 shape = capsule(ax, x, 0, length, 0.48, maximum * 0.045)
@@ -144,9 +153,11 @@ def partition_pages(data, pdf):
                 indices = [pair[0] for pair in group]
                 start, end = indices[0] - 0.25, indices[-1] + 0.25
                 ax.plot([start, end], [maximum * 1.08] * 2, lw=1.8, color=colors[assignment], solid_capstyle="butt")
-                ax.text((start + end) / 2, maximum * 1.12, assignment, ha="center", va="bottom", fontsize=6)
-            ax.set_xticks(range(len(subset)), subset, rotation=60, ha="right")
-            ax.set(xlim=(-0.7, max(7.5, min(16, len(selected)) - 0.3)), ylim=(0, maximum * 1.28), ylabel="Position (Mb)")
+                count = sum(data.assignments[n] == assignment for n in names)
+                ax.text((start + end) / 2, maximum * 1.12, f"{assignment} (n = {count})", ha="center", va="bottom", fontsize=6)
+            members = [n for n in names if data.assignments[n] == assignment]
+            ax.set_xticks(range(len(subset)), [f"{members.index(n) + 1}. {n}" for n in subset], rotation=60, ha="right")
+            ax.set(xlim=(-0.7, max(7.5, max(len(b[1]) for b in selected_blocks) - 0.3)), ylim=(0, maximum * 1.28), ylabel="Position (Mb)")
             ax.tick_params(axis="x", length=0, pad=2)
             ax.yaxis.set_major_locator(MaxNLocator(nbins=3))
             ax.spines["bottom"].set_visible(False)

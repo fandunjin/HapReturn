@@ -55,11 +55,10 @@ def comparison_pages(data, alignments, pdf):
     import matplotlib.pyplot as plt
     from matplotlib.path import Path as MplPath
     from matplotlib.patches import PathPatch, Patch
-    from .plotting import WIDTH, palette, capsule, save_page
+    from .plotting import WIDTH, palette, capsule, save_page, source_blocks
     colors, pages = palette(data.labels), []
-    names = sorted(data.records, key=lambda n: (list(data.labels + ["unresolved"]).index(data.assignments[n]), list(data.records).index(n)))
-    for offset in range(0, len(names), 16):
-        targets = names[offset:offset + 16]
+    for offset, (recovered_source, targets) in enumerate(source_blocks(data)):
+        source_members = [n for n in data.records if data.assignments[n] == recovered_source]
         hits = [h for h in alignments if h.target in targets]
         queries = {(h.source, h.query): h.query_length for h in hits}
         queries = dict(sorted(queries.items(), key=lambda item: (data.labels.index(item[0][0]), item[0][1])))
@@ -82,12 +81,12 @@ def comparison_pages(data, alignments, pdf):
                 codes = [MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4,
                          MplPath.LINETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4, MplPath.CLOSEPOLY]
                 ax.add_patch(PathPatch(MplPath(verts, codes), facecolor=colors[hit.source], edgecolor="none", alpha=0.20, zorder=1))
-            for (source, query), (bottom, height) in lpos.items():
+            for index, ((source, query), (bottom, height)) in enumerate(lpos.items(), qoffset + 1):
                 capsule(ax, 0.32, bottom, height, 0.02, 0.009, facecolor=colors[source])
-                ax.text(0.295, bottom + height / 2, f"{source} | {query}", va="center", ha="right", fontsize=5)
+                ax.text(0.295, bottom + height / 2, f"{index}. {source} | {query}", va="center", ha="right", fontsize=5)
             for target, (bottom, height) in rpos.items():
                 capsule(ax, 0.68, bottom, height, 0.02, 0.009, facecolor=colors[data.assignments[target]])
-                ax.text(0.705, bottom + height / 2, f"{target} | {data.assignments[target]}", va="center", fontsize=5)
+                ax.text(0.705, bottom + height / 2, f"{source_members.index(target) + 1}. {target} | {data.assignments[target]}", va="center", fontsize=5)
             ax.text(0.32, 1.04, "Original hifiasm\naligned contigs", ha="center", fontsize=7)
             ax.text(0.68, 1.04, "Curated assembly\nrecovered chromosomes", ha="center", fontsize=7)
             if not hits:
@@ -99,12 +98,12 @@ def comparison_pages(data, alignments, pdf):
             scale_bp = 10 ** max(0, len(str(largest)) - 1)
             ax.plot([0.05, 0.05], [0.04, 0.04 + scale_bp * scale], color="#333333", lw=1)
             ax.text(0.065, 0.04 + scale_bp * scale / 2, f"{scale_bp / 1e6:g} Mb", va="center", fontsize=6)
-            fig.text(0.04, 0.97, "Original hap provenance and curated hap correspondence", fontsize=7, weight="bold", va="top")
+            fig.text(0.04, 0.97, f"Original hap provenance → recovered {recovered_source} (n = {len(source_members)})", fontsize=7, weight="bold", va="top")
             fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in data.labels + ["unresolved"]],
                        loc="upper left", bbox_to_anchor=(0.04, 0.94), ncol=3)
             fig.text(0.04, 0.055, "Ribbons retain query/target coordinates and strand; color denotes original source. Both sides share a bp scale.\n"
-                     "Twisted ribbons denote reverse-strand links. Only accepted, aligned original contigs are shown.\n"
-                     f"Target sequences {offset + 1}–{offset + len(targets)} of {len(names)}; original contigs {qoffset + 1 if keys else 0}–{qoffset + len(subset)} of {len(keys)} in this target block.", fontsize=6)
+                     "Each target block contains one recovered source; links from either original source are retained.\n"
+                     f"Recovered {recovered_source}: chromosomes {source_members.index(targets[0]) + 1}–{source_members.index(targets[-1]) + 1} of {len(source_members)}; aligned contigs {qoffset + 1 if keys else 0}–{qoffset + len(subset)} of {len(keys)} in this block.", fontsize=6)
             pages.append(save_page(fig, pdf, f"comparison_{offset}_{qoffset}"))
     return pages
 
