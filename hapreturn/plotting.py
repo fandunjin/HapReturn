@@ -1,4 +1,4 @@
-"""Publication figures: shared scales, editable text and bounded page sizes."""
+"""Publication figures with shared scales, editable text and continuous sets."""
 import io
 import xml.etree.ElementTree as ET
 from itertools import groupby
@@ -176,35 +176,43 @@ def partition_pages(data, pdf):
 def matrix_pages(data, matrix, pdf):
     import numpy as np
     labels, colors, names = data.labels, palette(data.labels), list(data.records)
-    rows = list(matrix)
+    rowkeys = list(matrix)
     pages = []
-    for r0 in range(0, len(rows), 36):
-        rowkeys = rows[r0:r0 + 36]
-        for c0 in range(0, len(names), 24):
-            columns = names[c0:c0 + 24]
-            values = np.array([[matrix[key].get(n, 0.0) for n in columns] for key in rowkeys])
-            fig, ax = plt.subplots(figsize=(WIDTH, min(170, max(85, 45 + 3 * len(rowkeys))) / 25.4))
-            fig.subplots_adjust(left=0.26, right=0.85, bottom=0.24, top=0.82)
-            mesh = ax.pcolormesh(values, cmap="cividis", vmin=0, vmax=1, shading="flat", rasterized=False,
-                                edgecolors="face", linewidth=0, antialiased=False)
-            ax.set_xticks([i + 0.5 for i in range(len(columns))], columns, rotation=65, ha="right")
-            ax.set_yticks([i + 0.5 for i in range(len(rowkeys))], [f"{s} | {q}" for s, q in rowkeys])
-            ax.invert_yaxis()
-            ax.tick_params(length=0, pad=3)
-            ax.tick_params(axis="y", pad=16)
-            ax.set(xlabel="Curated chromosome", ylabel="Original hifiasm source | contig")
-            for i, (source, query) in enumerate(rowkeys):
-                ax.add_patch(Rectangle((-len(columns) * 0.035, i), len(columns) * 0.018, 1,
-                                       facecolor=colors[source], edgecolor="none", clip_on=False))
-            for i, name in enumerate(columns):
-                ax.add_patch(Rectangle((i, -0.35), 1, 0.20, facecolor=colors[data.assignments[name]], edgecolor="none", clip_on=False))
-            cax = fig.add_axes([0.90, 0.33, 0.018, 0.35])
-            bar = fig.colorbar(mesh, cax=cax, ticks=[0, 0.5, 1])
-            bar.set_label("Target fraction covered")
-            fig.text(0.04, 0.97, "Original-contig × curated-chromosome alignment matrix", fontsize=7, weight="bold", va="top")
-            fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in labels + ["unresolved"]],
-                       loc="upper left", bbox_to_anchor=(0.25, 0.93), ncol=3)
-            fig.text(0.04, 0.035, "Cells: union of target bases aligned from one original contig / target chromosome length.\n"
-                     f"Rows {r0 + 1}–{r0 + len(rowkeys)} of {len(rows)}; columns {c0 + 1}–{c0 + len(columns)} of {len(names)}. No clustering or row selection.", fontsize=6)
-            pages.append(save_page(fig, pdf, f"matrix_{r0}_{c0}"))
+    for offset, (recovered_source, columns) in enumerate(source_blocks(data, size=len(names))):
+        # Keep every original-contig row from both sources, including zero cells.
+        # Increase physical dimensions to retain readable labels without tiling.
+        width_mm = max(183, 76 + 4 * len(columns))
+        height_mm = max(100, 64 + 2.8 * len(rowkeys))
+        values = np.array([[matrix[key].get(n, 0.0) for n in columns] for key in rowkeys])
+        fig, ax = plt.subplots(figsize=(width_mm / 25.4, height_mm / 25.4))
+        fig.subplots_adjust(left=54 / width_mm, right=1 - 22 / width_mm,
+                            bottom=30 / height_mm, top=1 - 34 / height_mm)
+        mesh = ax.pcolormesh(values, cmap="cividis", vmin=0, vmax=1, shading="flat", rasterized=False,
+                            edgecolors="face", linewidth=0, antialiased=False)
+        ax.set_xticks([i + 0.5 for i in range(len(columns))], columns, rotation=65, ha="right")
+        ax.set_yticks([i + 0.5 for i in range(len(rowkeys))], [f"{s} | {q}" for s, q in rowkeys])
+        ax.invert_yaxis()
+        ax.tick_params(length=0, pad=3)
+        ax.tick_params(axis="y", pad=16)
+        ax.set(xlabel="Curated chromosome", ylabel="Original hifiasm source | contig")
+        for i, (source, query) in enumerate(rowkeys):
+            ax.add_patch(Rectangle((-len(columns) * 0.035, i), len(columns) * 0.018, 1,
+                                   facecolor=colors[source], edgecolor="none", clip_on=False))
+        for i, name in enumerate(columns):
+            ax.add_patch(Rectangle((i, -0.35), 1, 0.20, facecolor=colors[data.assignments[name]], edgecolor="none", clip_on=False))
+        colorbar_mm = min(50, (height_mm - 64) * 0.6)
+        cax = fig.add_axes([1 - 15 / width_mm, 0.5 - colorbar_mm / height_mm / 2,
+                            2 / width_mm, colorbar_mm / height_mm])
+        bar = fig.colorbar(mesh, cax=cax, ticks=[0, 0.5, 1])
+        bar.set_label("Target fraction covered")
+        fig.text(8 / width_mm, 1 - 7 / height_mm,
+                 f"Original-contig alignment matrix → recovered {recovered_source} (n = {len(columns)})",
+                 fontsize=7, weight="bold", va="top")
+        fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in labels + ["unresolved"]],
+                   loc="upper left", bbox_to_anchor=(54 / width_mm, 1 - 16 / height_mm), ncol=3)
+        fig.text(8 / width_mm, 4 / height_mm,
+                 "Cells: union of target bases aligned from one original contig / target chromosome length.\n"
+                 f"All {len(rowkeys)} original-contig rows from both sources and all {len(columns)} recovered {recovered_source} chromosomes are shown continuously.",
+                 fontsize=6)
+        pages.append(save_page(fig, pdf, f"matrix_{offset}"))
     return pages

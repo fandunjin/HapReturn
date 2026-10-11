@@ -75,12 +75,14 @@ Within each original contiguous gray run, expand an unresolved window's evidence
 
 `window_provenance.tsv` records raw and revised labels, method and evidence span. `window_rescue.tsv` records every context attempt. Local labels are separate from chromosome group assignments.
 
+`window_qc.tsv` and the HTML reassessment table report how many windows were resolved by expansion and why others remain gray. Expanding a context does not add alignment evidence; an uncovered run or competing source support can remain unresolved at its full length. Updating these figures reuses the PAFs.
+
 ## Outputs
 
 - `hap1.fa`, `hap2.fa`, `unresolved.fa`, `unplaced.fa`: sequence partitions.
 - `assignment.tsv`, `summary.tsv`, `homolog_groups.tsv`, `group_qc.tsv`: assignment evidence and checks.
 - `partition.pdf`: source evidence, counts, lengths and chromosome provenance.
-- `alignment_matrix.pdf`: original-contig × curated-chromosome support.
+- `alignment_matrix.pdf`: one complete original-contig × curated-chromosome matrix per recovered source, with dimensions adapted to record count.
 - `hap_comparison.pdf`: one continuous, height-adaptive correspondence figure per recovered source.
 - `report.html`: all figures, source statistics, window hover and numbered filtering.
 
@@ -115,8 +117,10 @@ colors retain that evidence. This is the second figure in `partition.pdf`.
 
 Rows represent original contigs and columns represent curated chromosomes.
 Each cell gives the fraction of the target chromosome covered by one contig;
-colored keys identify the original source and the recovered assignment.
-Exported in `alignment_matrix.pdf`.
+colored keys identify the original source and the recovered assignment. Each
+recovered hap has one continuous matrix containing all original-contig rows
+from both sources, without row or column pagination. The hap1 example is shown
+below. Exported in `alignment_matrix.pdf`.
 
 ![Synthetic original-contig to curated-chromosome alignment heatmap](docs/images/alignment_matrix.png)
 

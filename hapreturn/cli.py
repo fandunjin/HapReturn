@@ -297,7 +297,7 @@ def run():
     output_names += [f"{label}_to_final.paf" for label in sources]
     output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv", "homolog_groups.tsv"]
     if not args.no_plots:
-        output_names += ["report.html", "window_provenance.tsv", "window_rescue.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
+        output_names += ["report.html", "window_provenance.tsv", "window_rescue.tsv", "window_qc.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
                          "partition.pdf", "alignment_matrix.pdf", "hap_comparison.pdf"]
         size = args.plot_window_size or max(1, (max(records.values()) + 99) // 100)
         if sum((length + size - 1) // size for length in records.values()) > 200000:

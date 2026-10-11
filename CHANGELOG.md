@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+- Draw a complete alignment matrix for each recovered hap, retaining all original-contig rows from both sources and adapting figure dimensions without pagination.
+- Add local-window expansion counts, remaining unresolved reasons and report version to HTML; export the same evidence summary as window_qc.tsv.
+- Restore the README workflow diagram and reproducible synthetic figure gallery in English and Chinese.
+
 ## 0.5.0
 
 - Default to exact equal-copy assignment within homolog groups; require even ploidy and grouped chromosome order or a group table.

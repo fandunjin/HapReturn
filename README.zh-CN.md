@@ -74,6 +74,8 @@ hapreturn \
 
 `window_provenance.tsv` 保留原始窗口覆盖、原始归属、最终局部归属、判定方法及证据范围；`window_rescue.tsv` 记录每次扩增尝试。局部扩增独立于染色体的组内约束分配。
 
+`window_qc.tsv` 和 HTML 中的窗口复核表列出扩增前后数量及剩余灰色的原因。扩大统计范围不会增加比对证据；整段缺少覆盖或两个来源竞争时，扩大到全长后仍可能未确定。更新这些图形可直接复用已有 PAF。
+
 ## 输出
 
 | 文件 | 内容 |
@@ -82,7 +84,8 @@ hapreturn \
 | `summary.tsv`、`assignment.tsv` | 数量长度统计、逐染色体证据与最终分配 |
 | `homolog_groups.tsv`、`group_qc.tsv` | 实际同源组及约束分配检查 |
 | `partition.pdf` | 来源支持与输出统计；染色体来源图 |
-| `alignment_matrix.pdf` | 原始 contig × 最终染色体的比对矩阵 |
+| `alignment_matrix.pdf` | 最终 hap1、hap2 各一张连续矩阵，随记录数调整尺寸 |
+| `window_qc.tsv` | 局部窗口扩增前后统计及剩余灰色的原因 |
 | `hap_comparison.pdf` | 每套 hap 一张连续对应关系图，随记录数增加图高 |
 | `report.html` | 全部图形、来源统计、窗口悬停与编号筛选表 |
 
@@ -106,7 +109,7 @@ PDF 使用可编辑字体与独立文件；蓝、橙表示原始来源，灰色�
 
 ### 比对矩阵热图
 
-行为原始 contig，列为调整后的染色体；单元格表示该 contig 对目标染色体的覆盖比例。侧边和顶部色标分别标明原始来源与最终归属，输出为 `alignment_matrix.pdf`。
+行为原始 contig，列为调整后的染色体；单元格表示该 contig 对目标染色体的覆盖比例。最终 hap1、hap2 各自一张连续矩阵，保留两个原始来源的全部 contig 行，不按行列切页。侧边和顶部色标分别标明原始来源与最终归属，输出为 `alignment_matrix.pdf`；下图为 hap1 示例。
 
 ![合成数据：原始 contig 与调整后染色体的比对矩阵](docs/images/alignment_matrix.png)
 

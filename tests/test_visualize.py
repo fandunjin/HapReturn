@@ -6,7 +6,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-from hapreturn.visualize import make_report, window_support, prepare_data, alignment_matrix
+from hapreturn.visualize import make_report, window_support, prepare_data, alignment_matrix, window_qc
 from hapreturn.evidence import Alignment, read_paf
 from hapreturn.comparison import ribbon_vertices, common_scale, stacked_positions
 
@@ -50,6 +50,9 @@ class VisualizationTests(unittest.TestCase):
             self.assertIn('chr&lt;&amp;&quot;', report)
             self.assertIn('addEventListener', report)
             self.assertIn('Recovery summary', report)
+            self.assertIn('Local provenance reassessment', report)
+            self.assertIn('largest context:', report)
+            self.assertTrue((out / 'window_qc.tsv').is_file())
             self.assertIn('<th>No.</th>', report)
             self.assertIn("#assignments tbody tr", report)
             self.assertIn('row.cells[1].textContent', report)
@@ -70,6 +73,42 @@ class VisualizationTests(unittest.TestCase):
         matrix = alignment_matrix(data, hits, intervals)
         self.assertEqual(matrix[("hap1", "same_id")]["chr"], 0.75)
         self.assertEqual(matrix[("hap2", "same_id")]["chr"], 0.25)
+
+    def test_window_qc_distinguishes_rescue_and_remaining_evidence(self):
+        records = {"rescued": 20, "missing": 10, "weak": 10, "mixed": 10}
+        intervals = {"hap1": {"rescued": [(0, 4), (10, 12)], "weak": [(0, 1)], "mixed": [(0, 6)]},
+                     "hap2": {"rescued": [(0, 4)], "mixed": [(0, 5)]}}
+        data = prepare_data(["hap1", "hap2"], records, intervals,
+                            {name: "hap1" for name in records}, records, window_size=10)
+        qc = {key: (count, bases) for key, count, bases in window_qc(data)}
+        self.assertEqual(qc["all_windows"], (5, 50))
+        self.assertEqual(qc["raw_unresolved"], (5, 50))
+        self.assertEqual(qc["rescued_by_expansion"], (2, 20))
+        self.assertEqual(qc["remaining_unresolved"], (3, 30))
+        for reason in ("no_accepted_alignment", "below_coverage_threshold", "competing_sources"):
+            self.assertEqual(qc[reason], (1, 10))
+
+    def test_continuous_matrix_keeps_all_rows_and_chromosomes_per_source(self):
+        from matplotlib.backends.backend_pdf import PdfPages
+        from hapreturn.plotting import matrix_pages, STYLE
+        import matplotlib.pyplot as plt
+        records = {f"chr{i}": 100 for i in range(80)}
+        assignments = {name: "hap1" if i % 2 == 0 else "hap2" for i, name in enumerate(records)}
+        data = prepare_data(["hap1", "hap2"], records, {"hap1": {}, "hap2": {}}, assignments, records)
+        matrix = {(assignments[name], f"query{i}"): {name: 1.0} for i, name in enumerate(records)}
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "matrix.pdf"
+            with plt.rc_context(STYLE), PdfPages(path) as pdf:
+                pages = matrix_pages(data, matrix, pdf)
+            self.assertEqual(len(pages), 2)
+            self.assertEqual(len(re.findall(rb"/Type /Page\b", path.read_bytes())), 2)
+            self.assertIn("chr78", pages[0])
+            self.assertNotIn("chr79", pages[0])
+            self.assertIn("chr79", pages[1])
+            self.assertNotIn("chr78", pages[1])
+            for page in pages:
+                for index in range(80):
+                    self.assertIn(f"query{index}", page)
 
     def test_source_blocks_do_not_mix_14_plus_14_or_higher_counts(self):
         from hapreturn.plotting import source_blocks

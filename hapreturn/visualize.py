@@ -96,8 +96,34 @@ def alignment_matrix(data, alignments, intervals):
     return {key: fractions[key] for key in sorted(fractions, key=order)}
 
 
+def window_qc(data):
+    """Count local evidence and mutually exclusive remaining-gray reasons."""
+    metrics = {key: [0, 0] for key in ("all_windows", "raw_unresolved", "rescued_by_expansion",
+                                      "remaining_unresolved", "no_accepted_alignment",
+                                      "below_coverage_threshold", "competing_sources")}
+    def add(key, length):
+        metrics[key][0] += 1
+        metrics[key][1] += length
+    for name, start, end, first, second, origin in data.windows:
+        length = end - start
+        add("all_windows", length)
+        raw = data.window_annotations[(name, start)][0]
+        if raw == "unresolved":
+            add("raw_unresolved", length)
+            if origin != "unresolved":
+                add("rescued_by_expansion", length)
+        if origin == "unresolved":
+            add("remaining_unresolved", length)
+            reason = ("no_accepted_alignment" if first + second == 0 else
+                      "below_coverage_threshold" if max(first, second) / length < data.min_coverage else
+                      "competing_sources")
+            add(reason, length)
+    return [(key, *values) for key, values in metrics.items()]
+
+
 def write_html(path, data, sections):
     from .plotting import palette
+    from . import __version__
     escape, colors = html.escape, palette(data.labels)
     details = {}
     assignment_path = path.parent / "assignment.tsv"
@@ -111,6 +137,18 @@ def write_html(path, data, sections):
     summary = '<section><h2>Recovery summary</h2><table><thead><tr><th>No.</th><th>Source</th><th>Sequence count</th><th>Total length (bp)</th><th>Total length (Mb)</th></tr></thead><tbody>' + stats + '</tbody></table></section>'
     if any(row.get("assignment_mode") == "balanced" for row in details.values()):
         summary += '<section><h2>Group-constrained assignment</h2><p>Equal source counts are enforced within each supplied homolog group. The selected combination maximizes total union-covered bases. The assignment table retains the independent evidence label alongside the final label; review flags are recorded in group_qc.tsv.</p></section>'
+    metric_labels = {"all_windows": "All local windows", "raw_unresolved": "Unresolved before expansion",
+                     "rescued_by_expansion": "Resolved by expansion", "remaining_unresolved": "Still unresolved",
+                     "no_accepted_alignment": "Remaining: no accepted alignment",
+                     "below_coverage_threshold": "Remaining: coverage below threshold",
+                     "competing_sources": "Remaining: competing source support"}
+    qc_table = ''.join(f'<tr><td>{escape(metric_labels[key])}</td><td>{count:,}</td><td>{bases:,}</td><td>{bases / 1e6:.3f}</td></tr>'
+                       for key, count, bases in window_qc(data))
+    maximum_context = max((row[5] for row in data.rescue_attempts), default=0)
+    summary += (f'<section><h2>Local provenance reassessment</h2><p>Window expansion: {len(data.rescue_attempts):,} attempted contexts; '
+                f'largest context: {maximum_context:,} bp. Remaining gray windows have insufficient accepted coverage or competing source support.</p>'
+                '<table><thead><tr><th>Status</th><th>Windows</th><th>Length (bp)</th><th>Length (Mb)</th></tr></thead>'
+                f'<tbody>{qc_table}</tbody></table></section>')
     maximum = max(data.records.values())
     tracks = []
     for index, (name, length) in enumerate(data.records.items()):
@@ -125,7 +163,7 @@ def write_html(path, data, sections):
     options = ''.join(f'<option value="{escape(l, quote=True)}">{escape(l)}</option>' for l in data.labels + ["unresolved"])
     document = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HapReturn report</title>
 <style>body{font:15px Arial,sans-serif;color:#253247;background:#f5f6f8;margin:0}main{max-width:1100px;margin:auto;padding:28px}section{background:white;padding:24px;margin:20px 0}section>svg{display:block;width:100%;height:auto;margin:24px auto}.track{display:grid;grid-template-columns:150px 1fr 110px;align-items:center;gap:10px;margin:8px 0}.track svg{width:100%;height:24px}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:9px;border-bottom:1px solid #e4e8ee}tr:hover{background:#eef4fc}input,select{padding:8px;margin:8px}small{color:#637083}@media(max-width:600px){main{padding:10px}.track{grid-template-columns:90px 1fr}.track small{display:none}}</style>
-<main><h1>HapReturn</h1><p>Two-source chromosome recovery</p>''' + summary + figures + '''<section><h2>Explore chromosome windows</h2><p>Hover for coordinates and union-covered bases. All rows share the same length scale; gray indicates unresolved evidence. Gray runs are reassessed at increasing context widths up to their full extent; hover shows the raw label and evidence span.</p>''' + ''.join(tracks) + '''</section><section><h2>Chromosome assignments</h2><input id="search" placeholder="Search chromosome" aria-label="Search chromosome"><select id="source" aria-label="Filter source"><option value="">All sources</option>''' + options + f'''</select><p id="visible-count" aria-live="polite"></p><table id="assignments"><thead><tr><th>No.</th><th>Chromosome</th><th>Length (bp)</th><th>{escape(data.labels[0])} coverage</th><th>{escape(data.labels[1])} coverage</th><th>Assignment</th><th>Independent evidence</th><th>Homolog group</th></tr></thead><tbody>{table}</tbody></table></section><p>Window: {data.window_size:,} bp. Coordinates: zero-based, half-open. Local windows and whole-chromosome assignments use their respective union coverage.</p></main>''' + '''<script>const search=document.getElementById('search'),source=document.getElementById('source');function filter(){let count=0;const counts=new Map();document.querySelectorAll('#assignments tbody tr').forEach(row=>{row.hidden=!(row.cells[1].textContent.toLowerCase().includes(search.value.toLowerCase())&&(!source.value||row.dataset.source===source.value));if(!row.hidden){row.cells[0].textContent=++count;counts.set(row.dataset.source,(counts.get(row.dataset.source)||0)+1);}});document.getElementById('visible-count').textContent='Showing '+count+' chromosomes'+(count?' — '+Array.from(counts,([label,n])=>label+': '+n).join('; '):'');}search.addEventListener('input',filter);source.addEventListener('change',filter);filter();</script></html>'''
+<main><h1>HapReturn</h1><p>Two-source chromosome recovery · HapReturn ''' + escape(__version__) + '''</p>''' + summary + figures + '''<section><h2>Explore chromosome windows</h2><p>Hover for coordinates and union-covered bases. All rows share the same length scale; gray indicates unresolved evidence. Gray runs are reassessed at increasing context widths up to their full extent; hover shows the raw label and evidence span.</p>''' + ''.join(tracks) + '''</section><section><h2>Chromosome assignments</h2><input id="search" placeholder="Search chromosome" aria-label="Search chromosome"><select id="source" aria-label="Filter source"><option value="">All sources</option>''' + options + f'''</select><p id="visible-count" aria-live="polite"></p><table id="assignments"><thead><tr><th>No.</th><th>Chromosome</th><th>Length (bp)</th><th>{escape(data.labels[0])} coverage</th><th>{escape(data.labels[1])} coverage</th><th>Assignment</th><th>Independent evidence</th><th>Homolog group</th></tr></thead><tbody>{table}</tbody></table></section><p>Window: {data.window_size:,} bp. Coordinates: zero-based, half-open. Local windows and whole-chromosome assignments use their respective union coverage.</p></main>''' + '''<script>const search=document.getElementById('search'),source=document.getElementById('source');function filter(){let count=0;const counts=new Map();document.querySelectorAll('#assignments tbody tr').forEach(row=>{row.hidden=!(row.cells[1].textContent.toLowerCase().includes(search.value.toLowerCase())&&(!source.value||row.dataset.source===source.value));if(!row.hidden){row.cells[0].textContent=++count;counts.set(row.dataset.source,(counts.get(row.dataset.source)||0)+1);}});document.getElementById('visible-count').textContent='Showing '+count+' chromosomes'+(count?' — '+Array.from(counts,([label,n])=>label+': '+n).join('; '):'');}search.addEventListener('input',filter);source.addEventListener('change',filter);filter();</script></html>'''
     path.write_text(document, encoding="utf-8")
 
 
@@ -147,6 +185,10 @@ def make_report(out_dir, labels, records, intervals, assignments, all_records,
         writer.writerow(["seq_id", "window_start", "window_end", "evidence_start", "evidence_end", "context_length_bp",
                          *(f"{label}_covered_bp" for label in data.labels), "assignment"])
         writer.writerows(data.rescue_attempts)
+    with open(out_dir / "window_qc.tsv", "w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(["metric", "n_windows", "total_bp"])
+        writer.writerows(window_qc(data))
     matrix = alignment_matrix(data, alignments, intervals)
     with open(out_dir / "alignment_matrix.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
