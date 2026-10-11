@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+- Simplify HTML by removing the group-assignment and local-reassessment explanation sections.
+- Reserve measured chromosome-label space between provenance rows and adapt page height to prevent overlap.
+
 ## 0.5.1
 
 - Draw a complete alignment matrix for each recovered hap, retaining all original-contig rows from both sources and adapting figure dimensions without pagination.

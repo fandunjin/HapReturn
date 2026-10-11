@@ -135,20 +135,6 @@ def write_html(path, data, sections):
     categories = data.labels + ["unresolved", "unplaced"]
     stats = "".join(f'<tr><td>{i}</td><td>{escape(label)}</td><td>{count:,}</td><td>{bases:,}</td><td>{bases / 1e6:.3f}</td></tr>' for i, (label, count, bases) in enumerate(zip(categories, data.counts, data.bases), 1))
     summary = '<section><h2>Recovery summary</h2><table><thead><tr><th>No.</th><th>Source</th><th>Sequence count</th><th>Total length (bp)</th><th>Total length (Mb)</th></tr></thead><tbody>' + stats + '</tbody></table></section>'
-    if any(row.get("assignment_mode") == "balanced" for row in details.values()):
-        summary += '<section><h2>Group-constrained assignment</h2><p>Equal source counts are enforced within each supplied homolog group. The selected combination maximizes total union-covered bases. The assignment table retains the independent evidence label alongside the final label; review flags are recorded in group_qc.tsv.</p></section>'
-    metric_labels = {"all_windows": "All local windows", "raw_unresolved": "Unresolved before expansion",
-                     "rescued_by_expansion": "Resolved by expansion", "remaining_unresolved": "Still unresolved",
-                     "no_accepted_alignment": "Remaining: no accepted alignment",
-                     "below_coverage_threshold": "Remaining: coverage below threshold",
-                     "competing_sources": "Remaining: competing source support"}
-    qc_table = ''.join(f'<tr><td>{escape(metric_labels[key])}</td><td>{count:,}</td><td>{bases:,}</td><td>{bases / 1e6:.3f}</td></tr>'
-                       for key, count, bases in window_qc(data))
-    maximum_context = max((row[5] for row in data.rescue_attempts), default=0)
-    summary += (f'<section><h2>Local provenance reassessment</h2><p>Window expansion: {len(data.rescue_attempts):,} attempted contexts; '
-                f'largest context: {maximum_context:,} bp. Remaining gray windows have insufficient accepted coverage or competing source support.</p>'
-                '<table><thead><tr><th>Status</th><th>Windows</th><th>Length (bp)</th><th>Length (Mb)</th></tr></thead>'
-                f'<tbody>{qc_table}</tbody></table></section>')
     maximum = max(data.records.values())
     tracks = []
     for index, (name, length) in enumerate(data.records.items()):

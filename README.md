@@ -75,7 +75,7 @@ Within each original contiguous gray run, expand an unresolved window's evidence
 
 `window_provenance.tsv` records raw and revised labels, method and evidence span. `window_rescue.tsv` records every context attempt. Local labels are separate from chromosome group assignments.
 
-`window_qc.tsv` and the HTML reassessment table report how many windows were resolved by expansion and why others remain gray. Expanding a context does not add alignment evidence; an uncovered run or competing source support can remain unresolved at its full length. Updating these figures reuses the PAFs.
+`window_qc.tsv` reports how many windows were resolved by expansion and why others remain gray. Expanding a context does not add alignment evidence; an uncovered run or competing source support can remain unresolved at its full length. Updating these figures reuses the PAFs.
 
 ## Outputs
 

@@ -31,8 +31,9 @@ of sequence similarity, not an estimate of bases moved between haplotypes.
 
 Python/matplotlib produces vector PDF with embedded TrueType fonts, 5–7 pt
 sans-serif text, 8 pt lowercase panel labels, white backgrounds, and one
-consistent blue/orange source palette. Partition figures use a width of 183 mm
-and page heights up to 170 mm. Alignment matrices increase width and height
+consistent blue/orange source palette. Partition figures use a width of 183 mm.
+Chromosome provenance pages reserve space for the measured label depth between
+rows and adapt page height to prevent overlap. Alignment matrices increase width and height
 with record count; correspondence figures increase height. Each recovered set
 remains continuous without reducing label sizes. HTML embeds the same rendered
 figures and searchable quantitative evidence without external resources.

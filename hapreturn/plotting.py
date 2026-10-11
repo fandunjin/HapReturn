@@ -82,6 +82,23 @@ def source_blocks(data, size=16):
     return blocks
 
 
+def space_chromosome_rows(fig, axes):
+    """Reserve physical space for rotated chromosome labels between rows."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    depths = [max(0, ax.get_window_extent(renderer).y0 - ax.get_tightbbox(renderer).y0)
+              / fig.dpi * 25.4 for ax in axes]
+    row_mm, top_mm, gap_mm, footer_mm = 26, 32, 5, 12
+    height_mm = max(100, top_mm + row_mm * len(axes) + sum(depths)
+                    + gap_mm * (len(axes) - 1) + footer_mm)
+    fig.set_size_inches(WIDTH, height_mm / 25.4, forward=True)
+    cursor = height_mm - top_mm
+    for ax, depth in zip(axes, depths):
+        ax.set_position([0.10, (cursor - row_mm) / height_mm, 0.88, row_mm / height_mm])
+        cursor -= row_mm + depth + gap_mm
+    return height_mm
+
+
 def partition_pages(data, pdf):
     labels, names, colors = data.labels, list(data.records), palette(data.labels)
     categories = labels + ["unresolved", "unplaced"]
@@ -135,8 +152,10 @@ def partition_pages(data, pdf):
         nrows = len(selected_blocks)
         fig = plt.figure(figsize=(WIDTH, min(170, max(95, 40 + 31 * nrows)) / 25.4))
         grid = fig.add_gridspec(nrows, 1, left=0.10, right=0.98, top=0.82, bottom=0.22, hspace=0.72)
+        axes = []
         for row in range(nrows):
             ax = fig.add_subplot(grid[row, 0])
+            axes.append(ax)
             assignment, subset = selected_blocks[row]
             for x, name in enumerate(subset):
                 length = data.records[name] / 1e6
@@ -164,10 +183,11 @@ def partition_pages(data, pdf):
             ax.tick_params(axis="x", length=0, pad=2)
             ax.yaxis.set_major_locator(MaxNLocator(nbins=3))
             ax.spines["bottom"].set_visible(False)
-        fig.text(0.05, 0.97, "Chromosome-scale source provenance", fontsize=7, weight="bold", va="top")
+        height_mm = space_chromosome_rows(fig, axes)
+        fig.text(0.05, 1 - 7 / height_mm, "Chromosome-scale source provenance", fontsize=7, weight="bold", va="top")
         fig.legend(handles=[Patch(facecolor=colors[l], label=l) for l in categories[:3]],
-                   loc="upper left", bbox_to_anchor=(0.08, 0.93), ncol=3)
-        fig.text(0.05, 0.025, f"Window: {data.window_size:,} bp. Group labels above chromosomes show whole-chromosome assignments.\n"
+                   loc="upper left", bbox_to_anchor=(0.08, 1 - 15 / height_mm), ncol=3)
+        fig.text(0.05, 4 / height_mm, f"Window: {data.window_size:,} bp. Group labels above chromosomes show whole-chromosome assignments.\n"
                  "Band colors include expanded-context labels; evidence spans are recorded in window_rescue.tsv.", fontsize=6)
         pages.append(save_page(fig, pdf, f"partition_chromosomes_{offset}"))
     return pages

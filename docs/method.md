@@ -33,7 +33,7 @@ Identify runs of consecutive raw unresolved windows. For every window in a run, 
 
 `window_rescue.tsv` records attempted contexts, their source-covered bases and decisions. `window_provenance.tsv` preserves raw and revised labels, the method, and context coordinates. Thus a context-supported label is distinguishable from direct window evidence. Coordinates are zero-based and half-open.
 
-`window_qc.tsv` and HTML summarize raw unresolved, rescued and remaining unresolved windows by count and sequence length. Remaining windows are categorized by their original local evidence: no accepted alignment, maximum source coverage below threshold, or competing source support. Expansion reuses the same evidence, so a full gray run can still fail the thresholds.
+`window_qc.tsv` summarizes raw unresolved, rescued and remaining unresolved windows by count and sequence length. Remaining windows are categorized by their original local evidence: no accepted alignment, maximum source coverage below threshold, or competing source support. Expansion reuses the same evidence, so a full gray run can still fail the thresholds.
 
 ## Figures
 
