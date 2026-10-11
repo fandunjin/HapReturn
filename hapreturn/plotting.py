@@ -106,7 +106,7 @@ def partition_pages(data, pdf):
         ax.set(xlim=(-0.02, 1.03), ylim=(len(selected) - 0.5, -0.6), xlabel="Chromosome coverage (fraction)")
         ax.tick_params(axis="y", length=0)
         panel(ax, "a", "Source evidence")
-        ax.legend(loc="upper left", bbox_to_anchor=(0, -0.09), ncol=2, borderaxespad=0)
+        ax.legend(loc="upper left", bbox_to_anchor=(0, -0.14), ncol=2, borderaxespad=0)
         for row, (metric, title, unit) in enumerate(((data.counts, "Recovered sequence counts", "Sequences (count)"),
                                                     ([x / 1e6 for x in data.bases], "Recovered assembly lengths", "Sequence length (Mb)"))):
             ax = fig.add_subplot(grid[row, 1])
