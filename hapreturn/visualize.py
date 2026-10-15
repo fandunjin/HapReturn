@@ -1,6 +1,7 @@
 """Source data, publication PDF figures and a portable HTML report."""
 import csv
 import html
+import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass
@@ -121,7 +122,7 @@ def window_qc(data):
     return [(key, *values) for key, values in metrics.items()]
 
 
-def write_html(path, data, sections):
+def write_html(path, data, sections, curation_link=False):
     from .plotting import palette
     from . import __version__
     escape, colors = html.escape, palette(data.labels)
@@ -150,11 +151,19 @@ def write_html(path, data, sections):
     document = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HapReturn report</title>
 <style>body{font:15px Arial,sans-serif;color:#253247;background:#f5f6f8;margin:0}main{max-width:1100px;margin:auto;padding:28px}section{background:white;padding:24px;margin:20px 0}section>svg{display:block;width:100%;height:auto;margin:24px auto}.track{display:grid;grid-template-columns:150px 1fr 110px;align-items:center;gap:10px;margin:8px 0}.track svg{width:100%;height:24px}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:9px;border-bottom:1px solid #e4e8ee}tr:hover{background:#eef4fc}input,select{padding:8px;margin:8px}small{color:#637083}@media(max-width:600px){main{padding:10px}.track{grid-template-columns:90px 1fr}.track small{display:none}}</style>
 <main><h1>HapReturn</h1><p>Two-source chromosome recovery · HapReturn ''' + escape(__version__) + '''</p>''' + summary + figures + '''<section><h2>Explore chromosome windows</h2><p>Hover for coordinates and union-covered bases. All rows share the same length scale; gray indicates unresolved evidence. Gray runs are reassessed at increasing context widths up to their full extent; hover shows the raw label and evidence span.</p>''' + ''.join(tracks) + '''</section><section><h2>Chromosome assignments</h2><input id="search" placeholder="Search chromosome" aria-label="Search chromosome"><select id="source" aria-label="Filter source"><option value="">All sources</option>''' + options + f'''</select><p id="visible-count" aria-live="polite"></p><table id="assignments"><thead><tr><th>No.</th><th>Chromosome</th><th>Length (bp)</th><th>{escape(data.labels[0])} coverage</th><th>{escape(data.labels[1])} coverage</th><th>Assignment</th><th>Independent evidence</th><th>Homolog group</th></tr></thead><tbody>{table}</tbody></table></section><p>Window: {data.window_size:,} bp. Coordinates: zero-based, half-open. Local windows and whole-chromosome assignments use their respective union coverage.</p></main>''' + '''<script>const search=document.getElementById('search'),source=document.getElementById('source');function filter(){let count=0;const counts=new Map();document.querySelectorAll('#assignments tbody tr').forEach(row=>{row.hidden=!(row.cells[1].textContent.toLowerCase().includes(search.value.toLowerCase())&&(!source.value||row.dataset.source===source.value));if(!row.hidden){row.cells[0].textContent=++count;counts.set(row.dataset.source,(counts.get(row.dataset.source)||0)+1);}});document.getElementById('visible-count').textContent='Showing '+count+' chromosomes'+(count?' — '+Array.from(counts,([label,n])=>label+': '+n).join('; '):'');}search.addEventListener('input',filter);source.addEventListener('change',filter);filter();</script></html>'''
+    if ((path.parent / "evidence_config.json").is_file() and
+            json.loads((path.parent / "evidence_config.json").read_text(encoding="utf-8")).get("evidence_mode") == "hybrid"):
+        link = '<section><h2>Integrated hap assignment</h2><p>FASTA assignments use AGP + alignment evidence. Coverage figures below show alignment support only.</p><p><a href="evidence_report.html">AGP + minimap decisions and review flags</a></p></section>'
+        document = document.replace('<main>', '<main>' + link)
+        document = document.replace('Local windows and whole-chromosome assignments use their respective union coverage.', 'Local windows show alignment coverage; whole-chromosome assignments use integrated evidence.')
     path.write_text(document, encoding="utf-8")
+    if curation_link:
+        link = '<section><h2>AGP curation audit</h2><p><a href="curation/curation_report.html">Explore pre/post-curation intervals, junctions and scaffold order</a></p></section>'
+        path.write_text(document.replace("</main>", link + "</main>"), encoding="utf-8")
 
 
 def make_report(out_dir, labels, records, intervals, assignments, all_records,
-                min_coverage=0.25, dominance=0.6, window_size=0, alignments=None):
+                min_coverage=0.25, dominance=0.6, window_size=0, alignments=None, curation_link=False):
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
     from .plotting import STYLE, partition_pages, matrix_pages
@@ -190,4 +199,10 @@ def make_report(out_dir, labels, records, intervals, assignments, all_records,
             sections.append(("2. Original-contig alignment matrix", matrix_pages(data, matrix, pdf)))
         with PdfPages(out_dir / "hap_comparison.pdf") as pdf:
             sections.append(("3. Original hifiasm to recovered hap correspondence", comparison_pages(data, alignments, pdf)))
-    write_html(out_dir / "report.html", data, sections)
+    write_html(out_dir / "report.html", data, sections, curation_link)
+    if (out_dir / "evidence_config.json").exists():
+        from .hybrid import render_integration_report
+        render_integration_report(out_dir, sections)
+        config = json.loads((out_dir / "evidence_config.json").read_text(encoding="utf-8"))
+        if config.get("evidence_mode") == "hybrid":
+            (out_dir / "report.html").write_text((out_dir / "evidence_report.html").read_text(encoding="utf-8"), encoding="utf-8")

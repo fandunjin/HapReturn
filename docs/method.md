@@ -35,6 +35,20 @@ Identify runs of consecutive raw unresolved windows. For every window in a run, 
 
 `window_qc.tsv` summarizes raw unresolved, rescued and remaining unresolved windows by count and sequence length. Remaining windows are categorized by their original local evidence: no accepted alignment, maximum source coverage below threshold, or competing source support. Expansion reuses the same evidence, so a full gray run can still fail the thresholds.
 
+## Integrated AGP evidence
+
+When both AGPs are supplied, hybrid recovery uses unique component provenance
+first and accepted alignments to fill unknown non-gap intervals. Support is
+counted once per target position. Independent assignment uses known-support
+fraction and source dominance; balanced hybrid assignment requires explicit
+homolog groups. Mixed origins, conflicts and independent labels remain recorded.
+See [hybrid evidence](hybrid-evidence.md) for thresholds and output fields.
+
 ## Figures
 
 Source-support rows use faint horizontal guides. Count and assembly-length labels use plain numeric formatting. Chromosome outlines share a length scale without inferred centromeres. Alignment-matrix cells are union-covered target bases from one original contig divided by target length. Each recovered source has one complete matrix: columns contain all chromosomes assigned to that source and rows retain all original contigs from both sources, including zero cells. Matrix width and height adapt to column and row counts without pagination. Correspondence ribbons preserve PAF query and target intervals and strand. Every recovered source is drawn in one continuous correspondence figure with height adapted to record count; both sides share a base-pair scale and source colors follow the original contigs. HTML retains numbered filtering, source counts, raw evidence and constrained labels.
+
+Hybrid reports co-register AGP, minimap2 and integrated chromosome tracks. Each
+joint matrix cell pairs AGP component contribution with minimap2 union coverage,
+using the same full target-length denominator and retaining contigs represented
+by either source of evidence.

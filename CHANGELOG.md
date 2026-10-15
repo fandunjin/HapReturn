@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Add AGP curation comparison, component-source tracing and standalone chromosome recovery.
+- Integrate AGP provenance with minimap2 evidence for final assignments and FASTA export.
+- Preserve independent evidence, interval-level conflicts and explicit homolog-group constraints.
+- Add a unified English report with joint chromosome tracks, paired evidence matrices and editable vector exports.
+- Extend input validation, report refresh and regression coverage.
+
 ## 0.5.2
 
 - Simplify HTML by removing the group-assignment and local-reassessment explanation sections.
@@ -62,3 +70,4 @@
 - Export hap1, hap2, unresolved and unplaced sequences with original identifiers.
 - Validate optional chromosome lists, ploidy and homolog-group source balance.
 - Provide an installable CLI, synthetic examples and automated tests.
+

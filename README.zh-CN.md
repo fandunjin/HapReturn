@@ -2,7 +2,7 @@
 
 **将合并调整后的组装，按原始 hifiasm hap1/hap2 支持与同源组约束回分为两套。**
 
-二倍体、四倍体、八倍体及更高偶数倍性使用相同逻辑：每个同源组中两套各占一半，选择总来源支持最高的组合。
+支持独立来源分配，也支持二倍体、四倍体、八倍体及更高偶数倍性的同源组约束：每组两套各占一半，选择总来源支持最高的组合。
 
 ```text
 original hap1 + original hap2 → merge → HapHiC / Juicebox → curated 2n
@@ -56,13 +56,36 @@ hapreturn \
   --out-dir result
 ```
 
-默认采用组内约束分配：每 4 条选 2 条给 hap1，其余给 hap2，最终两套各 28 条。八倍体使用 `--ploidy 8`，每组为 4+4。
+未提供 AGP 时，默认采用组内约束分配：每 4 条选 2 条给 hap1，其余给 hap2，最终两套各 28 条。八倍体使用 `--ploidy 8`，每组为 4+4。
 
 已有比对可用 `--hap1-paf` 和 `--hap2-paf` 替代 FASTA 来源输入，无需重新运行 minimap2。PAF query 为原始 contig，target 为调整后的组装。来源可用 `--source-paf LABEL=PATH` 自定义命名，始终提供两套。
 
+## AGP 与整合证据
+
+提供调整前后的 AGP，即可结合实际拼接来源与比对支持：
+
+```bash
+hapreturn \
+  --final-fasta curated.fa --hap1-paf hap1.paf --hap2-paf hap2.paf \
+  --before-agp before.agp --after-agp after.agp \
+  --chromosome-list chromosomes.txt --out-dir result
+```
+
+同时提供两个 AGP 时，默认启用 hybrid，并按来源独立分配。可唯一追溯的 AGP 来源优先，比对补充未知区间，同一位置不重复计票；混合来源和冲突保留在报告中。
+组内等数分配需显式提供 `--assignment-mode balanced`、`--homolog-groups` 和偶数 `--ploidy`。`--evidence-mode minimap` 使用纯比对分配。
+
+仅比较人工调整前后的状态，无需序列比对：
+
+```bash
+hapreturn-agp --before-agp before.agp --after-agp after.agp --out-dir agp_result
+```
+
+两个 AGP 必须使用同一原始 component ID 和坐标。用于分组时，最终 AGP 的对象 ID、长度须与最终 FASTA 一致。默认识别 `h1tg`/`h2tg` 命名，其他命名可提供来源映射。
+详见 [AGP 模块](docs/agp-comparison.md) 和 [整合证据](docs/hybrid-evidence.md)。
+
 ## 分配方法与证据
 
-默认保留 mapQ ≥10、比对长度 ≥10 kb 的记录。每条染色体分别计算两个来源比对区间的并集覆盖碱基数 C1、C2。每个 P 条染色体的组内，将 C1−C2 最大的 P/2 条分给 hap1，其余分给 hap2；这就是满足等数约束时总覆盖支持最大的解。
+纯比对模式默认保留 mapQ ≥10、比对长度 ≥10 kb 的记录。每条染色体分别计算两个来源比对区间的并集覆盖碱基数 C1、C2。每个 P 条染色体的组内，将 C1−C2 最大的 P/2 条分给 hap1，其余分给 hap2；这就是满足等数约束时总覆盖支持最大的解。
 
 `assignment.tsv` 同时保留最终 `assignment`、独立证据 `evidence_assignment`、`group_id` 和最终来源覆盖比例。独立证据的默认阈值为覆盖至少 25%、来源占比至少 60%。`group_qc.tsv` 记录总支持、最优解与次优解差值，以及需要复核的证据变化或同分解。同分时按输入顺序稳定分配并标记复核；零证据不被描述为确定的来源证据。
 
@@ -77,6 +100,8 @@ hapreturn \
 `window_qc.tsv` 列出扩增前后数量及剩余灰色的原因。扩大统计范围不会增加比对证据；整段缺少覆盖或两个来源竞争时，扩大到全长后仍可能未确定。更新这些图形可直接复用已有 PAF。
 
 ## 输出
+
+Hybrid 模式的主 `report.html` 为全英文联合证据报告，包含同坐标条带、AGP／比对配对热图及可搜索明细；另输出 `minimap_assignment.tsv`、`evidence_comparison.tsv`、`hybrid_intervals.tsv` 和联合证据 PDF/SVG/PNG。AGP 调整对照与组成表保存在 `curation/`。
 
 | 文件 | 内容 |
 |---|---|
@@ -151,3 +176,4 @@ hapreturn-chromosomes \
 ```
 
 退出码 0 表示通过，1 表示输入或运行错误，2 表示已有输出但存在需复核的证据或同分解。`--allow-unresolved` 可接受需复核输出。方法见 [Method](docs/method.md)，采用 MIT 许可证。
+

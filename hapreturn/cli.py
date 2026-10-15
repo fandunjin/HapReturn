@@ -3,6 +3,8 @@
 
 import argparse
 import csv
+import json
+import hashlib
 import re
 import shutil
 import subprocess
@@ -12,6 +14,14 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from . import __version__
+
+
+def input_digest(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def fasta_records(path):
@@ -232,8 +242,8 @@ def parse_args():
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--chromosome-count", type=int, help="Select first N FASTA records; required if unplaced records follow")
     parser.add_argument("--chromosome-list", type=Path, help="One chromosome FASTA ID per line; safer when record order is arbitrary")
-    parser.add_argument("--assignment-mode", choices=("balanced", "provenance"), default="balanced",
-                        help="balanced: equal-copy group optimization (default); provenance: independent source tracing")
+    parser.add_argument("--assignment-mode", choices=("balanced", "provenance"), default=None,
+                        help="balanced: equal-copy group optimization; provenance: independent tracing (hybrid default; minimap default is balanced)")
     parser.add_argument("--ploidy", type=int, help="Even number of chromosomes per homolog group; required in balanced mode")
     parser.add_argument("--homolog-groups", type=Path, help="TSV: group_id, seq_id; otherwise consecutive FASTA records form groups")
     parser.add_argument("--hap1-per-group", type=int, help="Expected hap1 records per group; used for QC only")
@@ -248,11 +258,26 @@ def parse_args():
     parser.add_argument("--force", action="store_true", help="Allow reuse of a nonempty output directory")
     parser.add_argument("--no-plots", action="store_true", help="Skip visualization outputs")
     parser.add_argument("--plot-window-size", type=int, default=0, help="Window size in bp; 0 selects about 100 windows on the longest chromosome")
+    parser.add_argument("--evidence-mode", choices=("auto", "minimap", "hybrid"), default="auto",
+                        help="auto: hybrid with AGP, otherwise minimap; hybrid uses provenance-first disjoint evidence")
+    parser.add_argument("--before-agp", type=Path, help="Optional pre-curation AGP; supply with --after-agp")
+    parser.add_argument("--after-agp", type=Path, help="Optional post-curation AGP matching --final-fasta")
+    parser.add_argument("--agp-source-map", type=Path, help="Optional contig_id/source TSV for AGP provenance")
     return parser.parse_args()
 
 
 def run():
     args = parse_args()
+    if args.evidence_mode == "auto":
+        args.evidence_mode = "hybrid" if args.before_agp else "minimap"
+    if args.evidence_mode == "hybrid" and not args.before_agp:
+        raise ValueError("Hybrid evidence requires both AGP files")
+    if args.assignment_mode is None:
+        args.assignment_mode = "provenance" if args.evidence_mode == "hybrid" else "balanced"
+    if args.evidence_mode == "hybrid" and args.assignment_mode == "balanced" and not args.homolog_groups:
+        raise ValueError("Hybrid balanced assignment requires explicit --homolog-groups; adjacent FASTA records do not establish homology")
+    if bool(args.before_agp) != bool(args.after_agp) or (args.agp_source_map and not args.before_agp):
+        raise ValueError("Supply --before-agp and --after-agp together; --agp-source-map requires both")
     if not (0.5 < args.dominance <= 1 and 0 <= args.min_covered_fraction <= 1):
         raise ValueError("dominance must be in (0.5,1]; min-covered-fraction in [0,1]")
     if args.ploidy is not None and args.ploidy < 1:
@@ -271,7 +296,24 @@ def run():
         quotas = {label: args.ploidy // 2 for label in sources}
     if args.out_dir.exists() and not args.force and any(args.out_dir.iterdir()):
         raise ValueError("Output directory is nonempty; use a new directory or --force")
+    if args.no_plots and (args.out_dir / "report.html").exists():
+        raise ValueError("--no-plots would leave stale figures; choose a new output directory")
     all_records = fasta_lengths(args.final_fasta)
+    agp_result = None
+    if args.before_agp:
+        from .agp_cli import prepare_comparison
+        from .agp import OUTPUT_NAMES
+        from .agp_provenance import PROVENANCE_OUTPUTS
+        agp_output_names = OUTPUT_NAMES + PROVENANCE_OUTPUTS
+        agp_result = prepare_comparison(args.before_agp, args.after_agp, args.agp_source_map)
+        unexpected = {a["source_hap"] for a in agp_result["atoms"]} - set(sources) - {"unresolved"}
+        if args.evidence_mode == "hybrid" and unexpected:
+            raise ValueError("AGP source labels disagree with alignment sources; provide --agp-source-map")
+        if agp_result["after_lengths"] != all_records:
+            raise ValueError("Post-curation AGP object IDs/lengths must exactly match final FASTA records")
+        agp_inputs = {p.resolve() for p in (args.before_agp, args.after_agp, args.agp_source_map) if p}
+        if any((args.out_dir / "curation" / name).resolve() in agp_inputs for name in agp_output_names):
+            raise ValueError("AGP output would overwrite an input")
     names = list(all_records)
     if args.chromosome_count is not None and args.chromosome_list is not None:
         raise ValueError("Use chromosome-count or chromosome-list, not both")
@@ -293,9 +335,13 @@ def run():
         groups = consecutive_groups(records, args.ploidy)
     input_paths = {args.final_fasta.resolve(), *(path.resolve() for kind, path in sources.values())}
     input_paths.update(path.resolve() for path in (args.sources, args.chromosome_list, args.homolog_groups) if path is not None)
+    input_paths.update(path.resolve() for path in (args.before_agp, args.after_agp, args.agp_source_map) if path is not None)
     output_names = [f"{label}.fa" for label in list(sources) + ["unresolved", "unplaced"]]
     output_names += [f"{label}_to_final.paf" for label in sources]
-    output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv", "homolog_groups.tsv"]
+    output_names += ["assignment.tsv", "group_qc.tsv", "summary.tsv", "homolog_groups.tsv",
+                     "minimap_assignment.tsv", "evidence_comparison.tsv", "hybrid_intervals.tsv", "evidence_config.json", "evidence_report.html"]
+    output_names += [stem + suffix for stem in ("joint_evidence_tracks", "joint_evidence_matrix")
+                     for suffix in (".pdf", ".svg", ".png", ".tsv", ".layout.json", ".alignment.json")]
     if not args.no_plots:
         output_names += ["report.html", "window_provenance.tsv", "window_rescue.tsv", "window_qc.tsv", "alignment_matrix.tsv", "alignment_links.tsv",
                          "partition.pdf", "alignment_matrix.pdf", "hap_comparison.pdf"]
@@ -304,7 +350,14 @@ def run():
             raise ValueError("Too many plotting windows; increase --plot-window-size")
     if any((args.out_dir / name).resolve() in input_paths for name in output_names):
         raise ValueError("An output would overwrite an input; choose a separate output directory")
+    if agp_result is not None and any((args.out_dir / "curation" / name).resolve() in input_paths for name in agp_output_names):
+        raise ValueError("AGP output would overwrite an input; choose a separate output directory")
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    if args.evidence_mode == "minimap":
+        for filename in ("evidence_comparison.tsv", "hybrid_intervals.tsv", "evidence_report.html"):
+            (args.out_dir / filename).unlink(missing_ok=True)
+    (args.out_dir / "evidence_config.json").write_text(json.dumps({"schema_version": 1,
+        "evidence_mode": args.evidence_mode, "assignment_mode": args.assignment_mode}), encoding="utf-8")
     paf_paths = {}
     for label, (kind, path) in sources.items():
         paf = path
@@ -323,24 +376,35 @@ def run():
             intervals[hit.source][hit.target].append((hit.start, hit.end))
             if not args.no_plots:
                 alignments.append(hit)
+    hybrid_support, hybrid_audit, hybrid_segments = {}, {}, []
+    if args.evidence_mode == "hybrid":
+        from .hybrid import fuse_evidence
+        hybrid_support, hybrid_audit, hybrid_segments = fuse_evidence(agp_result, intervals, names, list(sources))
+    from .agp_provenance import assignments_from_paf
+    minimap_rows = assignments_from_paf(list(paf_paths.values()), all_records, list(sources),
+                                      args.min_mapq, args.min_aln_len, args.min_covered_fraction, args.dominance)
+    from .agp import write_tsv
+    write_tsv(args.out_dir / "minimap_assignment.tsv", [minimap_rows[n] for n in names], list(minimap_rows[names[0]]))
     rows, support_by_name, evidence, evidence_reason = [], {}, {}, {}
     for name in names:
         length = records[name]
-        support = {label: union_length(intervals[label][name]) for label in sources}
+        alignment_support = {label: union_length(intervals[label][name]) for label in sources}
+        support = hybrid_support[name] if args.evidence_mode == "hybrid" else alignment_support
         maximum = max(support.values())
         total = sum(support.values())
         dominant = maximum / total if total else 0.0
-        covered = maximum / length
+        denominator = hybrid_audit[name].get("sequence_bp", 0) if args.evidence_mode == "hybrid" else length
+        covered = (total / denominator if denominator else 0) if args.evidence_mode == "hybrid" else maximum / length
         winners = [label for label, bp in support.items() if bp == maximum]
         label = winners[0] if len(winners) == 1 else "unresolved"
         reason = "assigned"
-        if covered < args.min_covered_fraction:
+        if not total or covered < args.min_covered_fraction:
             reason, label = "low_coverage", "unresolved"
         elif dominant < args.dominance or len(winners) != 1:
             reason, label = "ambiguous_origin", "unresolved"
         support_by_name[name] = support
         evidence[name], evidence_reason[name] = label, reason
-        rows.append((name, length, *support.values(), f"{covered:.6f}", f"{dominant:.6f}", label, reason))
+        rows.append((name, length, *alignment_support.values(), f"{covered:.6f}", f"{dominant:.6f}", label, reason))
     assignments, group_audit = dict(evidence), {}
     if args.assignment_mode == "balanced":
         from .assignment import balanced_assignment
@@ -354,15 +418,17 @@ def run():
         writer.writerow(("seq_id", "length", *(f"{label}_covered_bp" for label in sources),
                          "dominant_coverage_fraction", "dominance", "assignment", "reason",
                          "evidence_assignment", "evidence_reason", "assignment_mode", "group_id",
-                         "assigned_coverage_fraction", "assigned_source_share"))
+                         "assigned_coverage_fraction", "assigned_source_share", "evidence_mode",
+                         *(f"{label}_support_bp" for label in sources), "support_coverage_fraction"))
         for row in rows:
             name, label = row[0], assignments[row[0]]
             selected = support_by_name[name].get(label, 0)
             total = sum(support_by_name[name].values())
             reason = ("group_constrained" if label != evidence[name] else evidence_reason[name])
-            writer.writerow((*row[:6], label, reason, evidence[name], evidence_reason[name],
+            writer.writerow((*row[:4], minimap_rows[name]["dominant_coverage_fraction"], row[5], label, reason, evidence[name], evidence_reason[name],
                              args.assignment_mode, group_of.get(name, ""),
-                             f"{selected / records[name]:.6f}", f"{selected / total if total else 0:.6f}"))
+                             f"{selected / records[name]:.6f}", f"{selected / total if total else 0:.6f}",
+                             args.evidence_mode, *support_by_name[name].values(), row[4]))
     with open(args.out_dir / "homolog_groups.tsv", "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(("group_id", "seq_id"))
@@ -397,10 +463,37 @@ def run():
         for label in list(assigned) + ["unplaced"]:
             members = assigned[label] if label in assigned else [name for name in all_records if name not in records]
             writer.writerow((label, len(members), sum(all_records[name] for name in members)))
+    integration_rows = []
+    if agp_result is not None:
+        from .agp_cli import generate_comparison
+        from .agp_provenance import attach_provenance, read_alignment_assignments
+        attach_provenance(agp_result, list(sources), list(records), args.dominance, args.min_covered_fraction,
+                          args.assignment_mode, groups, args.ploidy,
+                          read_alignment_assignments(args.out_dir / "minimap_assignment.tsv", all_records))
+        if args.evidence_mode == "hybrid":
+            from .hybrid import write_integration
+            integration_rows = write_integration(args.out_dir, list(sources), names, hybrid_support,
+                hybrid_audit, hybrid_segments, {n: minimap_rows[n]["assignment"] for n in names},
+                {r["seq_id"]: r["independent_assignment"] for r in agp_result["agp_provenance"]["chromosomes"]},
+                evidence, assignments, {"schema_version": 1, "evidence_mode": "hybrid", "assignment_mode": args.assignment_mode,
+                    "min_mapq": args.min_mapq, "min_aln_len": args.min_aln_len,
+                    "min_covered_fraction": args.min_covered_fraction, "dominance": args.dominance,
+                    "policy": "unique AGP provenance first; exclusive alignment fills unknown non-gap intervals",
+                    "version": __version__, "labels": list(sources), "selected": names,
+                    "final_fasta": str(args.final_fasta.resolve()),
+                    "inputs": [{"path": str(p.resolve()), "sha256": input_digest(p)}
+                               for p in [args.before_agp, args.after_agp, *paf_paths.values(),
+                                         *([args.agp_source_map] if args.agp_source_map else [])]],
+                    "groups": dict(groups), "ploidy": args.ploidy})
+        for atom in agp_result["atoms"]:
+            if len(atom["after"]) == 1:
+                atom["after_assignment"] = assignments.get(atom["after"][0]["object"], "unplaced")
+        generate_comparison(agp_result, args.out_dir / "curation", no_plots=args.no_plots)
     if not args.no_plots:
         from .visualize import make_report
         make_report(args.out_dir, sources, records, intervals, assignments, all_records,
-                    args.min_covered_fraction, args.dominance, args.plot_window_size, alignments)
+                    args.min_covered_fraction, args.dominance, args.plot_window_size, alignments,
+                    curation_link=agp_result is not None)
         if args.force:
             for stem in ("coverage", "assignment", "tracks", "summary", "overview"):
                 for extension in ("png", "svg", "pdf"):
@@ -408,8 +501,8 @@ def run():
                     if legacy.is_file() and legacy.resolve() not in input_paths:
                         legacy.unlink()
     print(" ".join(f"{label}={len(members)}" for label, members in assigned.items()) + f" groups_to_review={len(qc_errors)}")
-    if (assigned["unresolved"] or qc_errors) and not args.allow_unresolved:
-        print("Review assignment.tsv and group_qc.tsv; use --allow-unresolved to accept partial output", file=sys.stderr)
+    if (assigned["unresolved"] or qc_errors or any(r["review_flags"] for r in integration_rows) or (agp_result and (agp_result["summary"]["review_items"] or agp_result["agp_provenance"]["review_chromosomes"]))) and not args.allow_unresolved:
+        print("Review assignment.tsv, group_qc.tsv and optional curation/curation_qc.tsv; use --allow-unresolved to accept partial output", file=sys.stderr)
         return 2
     return 0
 

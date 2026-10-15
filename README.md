@@ -3,8 +3,8 @@
 **Recover two chromosome sets from a curated merged assembly using original hifiasm provenance and equal-copy homolog-group constraints.**
 
 HapReturn traces the original hap1/hap2 contigs back to the curated assembly,
-then recovers two chromosome sets with equal copy counts within each homolog
-group. The logic is the same for diploid, tetraploid, octoploid and higher
+then recovers two chromosome sets using independent source evidence or equal-copy
+constraints within homolog groups. The logic is the same for diploid, tetraploid, octoploid and higher
 even-ploidy assemblies: **2n → n + n**.
 
 ```text
@@ -27,7 +27,7 @@ original hap1 + original hap2 → merge → HapHiC / Juicebox → curated 2n
 
 ## At a glance
 
-- **Recover two sets:** assign chromosomes using original hifiasm source evidence.
+- **Recover two sets:** assign chromosomes using original hifiasm alignments and optional AGP provenance.
 - **Balance within homolog groups:** select the combination with the highest total support, with half the chromosomes assigned to each source.
 - **Resolve local provenance:** expand evidence windows within contiguous unresolved regions and retain the recorded evidence.
 - **Inspect the result:** export chromosome counts, lengths, assignment tables, three PDF files and a self-contained HTML report.
@@ -57,13 +57,43 @@ hapreturn \
   --out-dir result
 ```
 
-The default balanced mode assigns two of every four homologs to each source, producing 28 + 28 records. At ploidy eight it assigns 4 + 4 per group. An even `--ploidy` is required.
+Without AGP input, the default balanced mode assigns two of every four homologs to each source, producing 28 + 28 records. At ploidy eight it assigns 4 + 4 per group. An even `--ploidy` is required.
 
 Use `--hap1-paf` and `--hap2-paf` instead of source FASTAs to reuse alignments. Queries must be original contigs; targets must be the curated assembly. Exactly two custom labels can be supplied with `--source-paf LABEL=PATH` or `--source-fasta LABEL=PATH`.
 
+## AGP and integrated evidence
+
+Add pre- and post-curation AGPs to combine construction provenance with alignment support:
+
+```bash
+hapreturn \
+  --final-fasta curated.fa --hap1-paf hap1.paf --hap2-paf hap2.paf \
+  --before-agp before.agp --after-agp after.agp \
+  --chromosome-list chromosomes.txt --out-dir result
+```
+
+With both AGPs, `--evidence-mode auto` selects hybrid evidence and defaults to
+independent source assignment. Unique AGP provenance takes priority; accepted
+alignments fill unknown intervals without counting the same position twice.
+Mixed origins and conflicts remain visible. Balanced hybrid assignment requires
+`--assignment-mode balanced`, explicit `--homolog-groups` and even `--ploidy`.
+Use `--evidence-mode minimap` for alignment-only assignment.
+
+To compare curation states without sequence alignment:
+
+```bash
+hapreturn-agp --before-agp before.agp --after-agp after.agp --out-dir agp_result
+```
+
+Both AGPs must use the same original component IDs and coordinates. The final
+AGP must match the curated FASTA IDs and lengths when used for recovery.
+Source names follow the `h1tg`/`h2tg` convention; custom names use an explicit
+source map. See [AGP comparison](docs/agp-comparison.md) and
+[hybrid evidence](docs/hybrid-evidence.md) for options and interpretation.
+
 ## Assignment
 
-After filtering at mapQ ≥10 and alignment length ≥10 kb, merge overlapping target intervals within each source. For each chromosome, C1 and C2 are union-covered target bases. Assign the P/2 largest differences C1−C2 to source 1 and the remainder to source 2. This exactly maximizes total support under the group balance constraint.
+For alignment-only recovery, after filtering at mapQ ≥10 and alignment length ≥10 kb, merge overlapping target intervals within each source. For each chromosome, C1 and C2 are union-covered target bases. Assign the P/2 largest differences C1−C2 to source 1 and the remainder to source 2. This exactly maximizes total support under the group balance constraint.
 
 `assignment.tsv` retains final labels, independent evidence labels, group IDs, and final-source coverage. Independent evidence uses coverage ≥0.25 and dominance ≥0.60 by default. `group_qc.tsv` records total support, the optimality gap, changed evidence, and tied optima. Ties use stable input order and are flagged for review; zero evidence is recorded as such.
 
@@ -84,7 +114,9 @@ Within each original contiguous gray run, expand an unresolved window's evidence
 - `partition.pdf`: source evidence, counts, lengths and chromosome provenance.
 - `alignment_matrix.pdf`: one complete original-contig × curated-chromosome matrix per recovered source, with dimensions adapted to record count.
 - `hap_comparison.pdf`: one continuous, height-adaptive correspondence figure per recovered source.
-- `report.html`: all figures, source statistics, window hover and numbered filtering.
+- `report.html`: figures and searchable evidence; hybrid runs use the unified English joint-evidence report.
+- Hybrid runs also write `minimap_assignment.tsv`, `evidence_comparison.tsv`, `hybrid_intervals.tsv`, and joint-evidence PDF/SVG/PNG figures.
+- `curation/`: AGP component correspondence, curation events and source-composition tables when AGPs are supplied.
 
 The correspondence figures retain accepted links from both original sources. PDFs use editable text; figures are exported as separate PDFs and one portable HTML.
 
@@ -157,7 +189,7 @@ in `group_qc.tsv`; the final chromosome counts are 6 + 6.
 hapreturn-report --result-dir result --out-dir refreshed_report
 ```
 
-This preserves chromosome assignments and redraws figures with local window expansion. To apply balanced assignment to an earlier result, rerun the main command with the original curated FASTA, existing PAFs and ploidy, using a new output directory. Reuse any customized filtering and window settings.
+This preserves chromosome assignments and redraws figures, including joint AGP/alignment views for hybrid results. To apply balanced assignment to an earlier result, rerun the main command with the original curated FASTA, existing PAFs and ploidy, using a new output directory. Reuse any customized filtering and window settings.
 
 ## Standalone correspondence figure
 
@@ -176,3 +208,4 @@ hapreturn --final-fasta examples/octoploid/final.fa \
 ```
 
 Exit status: 0 passed; 1 input/runtime error; 2 outputs available with review flags. `--allow-unresolved` accepts review-required output. MIT license.
+

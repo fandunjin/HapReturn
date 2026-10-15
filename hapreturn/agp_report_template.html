@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HapReturn · AGP 人工调整对照</title>
+<style>
+:root{--ink:#253247;--muted:#637083;--blue:#3274a1;--line:#e0e6ee}*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:var(--ink);font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1440px;margin:auto;padding:28px}h1{margin:0;font-size:28px}h2{font-size:19px;margin:0 0 12px}p{margin:8px 0}section{background:white;border:1px solid var(--line);border-radius:12px;padding:22px;margin:18px 0}small,.muted{color:var(--muted)}.badge{display:inline-block;border-radius:6px;background:#eef3f8;padding:1px 7px;font-size:12px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px}.card{background:white;border:1px solid var(--line);border-radius:10px;padding:16px}.card strong{display:block;font-size:25px}.card span{color:var(--muted)}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}button,input,select{font:inherit;border:1px solid #cbd5e1;border-radius:6px;background:white;padding:7px 10px;color:var(--ink)}button{cursor:pointer}button:hover{background:#eaf2f9}input[type=checkbox]{accent-color:var(--blue)}input[type=search]{min-width:240px}a{color:var(--blue)}#diagram{overflow:auto;max-height:880px;border:1px solid var(--line);border-radius:8px;background:white}#diagram svg{display:block;width:100%;min-width:1000px;height:auto}.table-wrap{overflow:auto;max-height:570px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f6f8fb;z-index:1;white-space:nowrap}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.active{background:#eaf2f9}td.code{font-family:Consolas,monospace;font-size:12px;overflow-wrap:anywhere}.downloads a{display:inline-block;margin:5px 15px 5px 0}#details{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f8fb;border-radius:8px;padding:14px;max-height:360px;overflow:auto}#paths{overflow-wrap:anywhere}.notice{border-left:3px solid #d88a3d;padding-left:12px}.link{cursor:pointer}.link:hover{fill-opacity:.8!important;stroke:#253247;stroke-width:1}.faded{opacity:.12}.selected{stroke:#8a3fab;stroke-width:1.2;fill-opacity:.65!important}@media(max-width:650px){main{padding:12px}section{padding:14px}h1{font-size:23px}input[type=search]{min-width:180px}}
+</style></head>
+<body><main>
+<header><span class="badge">HapReturn · AGP curation audit</span><h1>人工调整前后：片段对应与变化明细</h1><p id="paths" class="muted"></p>
+<p class="notice">比较两个组装状态。重命名、整条 scaffold 反向、scaffold 排序与内部结构变化分别统计；不推断人工操作顺序，也不据此判断 Hi-C 支持或定相正确性。</p></header>
+<div id="summary" class="cards"></div>
+<section><h2>当前染色体由哪些原始 hap1／hap2 contig 组成？</h2>
+<p id="provenance-intro"></p><div id="partition-cards" class="cards"></div>
+<p class="notice">AGP 统计实际用于拼接的原始 contig 碱基；minimap2 统计序列比对支持，可包含同源交叉比对。两者是不同证据，结果可能相同或不同。整条染色体的分组标签不会覆盖其内部的混合来源。</p>
+<div class="controls"><input id="provenance-search" type="search" placeholder="搜索当前染色体／原始 contig" aria-label="搜索染色体来源"><select id="provenance-source" aria-label="筛选 AGP 分组"><option value="">所有 AGP 分组</option></select><label><input id="show-unplaced" type="checkbox">显示 unplaced</label></div>
+<p id="provenance-count" class="muted" aria-live="polite"></p><div class="table-wrap"><table><thead><tr><th>当前染色体</th><th>来源组成（长度按比例）</th><th id="source-first-head">hap1</th><th id="source-second-head">hap2</th><th>AGP 分组</th><th>状态／原始 scaffold</th><th>minimap2 分组</th><th>方法比较</th></tr></thead><tbody id="provenance-rows"></tbody></table></div>
+<div id="component-detail"><p class="muted">点击染色体展开原始 hifiasm contig、原始区间、当前坐标和调整前 scaffold。</p></div>
+</section>
+<section><h2>原始 hifiasm contig → 当前染色体</h2><div class="controls"><select id="origin-select" aria-label="选择来源对应图的染色体"><option value="all">全部主要染色体</option></select><button id="export-origin-svg">导出来源对应 SVG</button></div>
+<p class="muted">左侧直接标出原始 hifiasm contig ID，蓝色为第一来源、橙色为第二来源；右侧为当前染色体。原始坐标轴延伸至 AGP 中已知的最大坐标，不代表已验证完整原始 contig 长度；左侧浅灰区域表示未用于当前所选染色体的原始区间。</p>
+<div id="origin-diagram" style="overflow:auto;max-height:850px;border:1px solid #e0e6ee;border-radius:8px"></div></section>
+<section><h2>AGP 与 minimap2：组成记录和相似性支持分别对照</h2><p id="method-intro"></p><label><input id="method-differences" type="checkbox">只显示分组或独立来源判断不一致</label>
+<div class="table-wrap"><table><thead><tr><th>当前染色体</th><th>AGP 第一来源实际 bp</th><th>AGP 第二来源实际 bp</th><th>minimap2 第一来源覆盖 bp</th><th>minimap2 第二来源覆盖 bp</th><th>独立来源 AGP／minimap2</th><th>最终分组 AGP／minimap2</th><th>比较</th></tr></thead><tbody id="method-rows"></tbody></table></div></section>
+<section><h2>片段对应图</h2><p>左侧调整前，右侧调整后；条带长度与连线宽度使用同一 bp 比例。颜色表示原始 contig 来源；蓝／橙默认由 h1tg／h2tg 命名推断，不代表最终分组。</p>
+<div class="controls"><button id="overview">主要 scaffold</button><button id="all-tracks">全部 scaffold</button><button id="changed-tracks">变化相关 scaffold</button><select id="track-select" aria-label="选择调整前 scaffold"></select><label><input id="align-tracks" type="checkbox">按对应关系对齐右侧轨道</label><button id="export-svg">导出当前 SVG</button></div>
+<p id="view-info" class="muted" aria-live="polite"></p><div id="diagram"><!--INITIAL_SVG--></div>
+<p class="muted">悬停查看原始区间、前后坐标和方向；点击片段联动明细。方向箭头沿轨道向下为正向，向上为反向。只有唯一对应区间绘制 ribbon；歧义区间保留在轨道及明细表。白色区域为 AGP gap。主要视图省略短 scaffold，全量数据仍在表格、PDF 和 JSON 中。</p></section>
+<section><h2>变化事件</h2><div class="controls"><input id="event-search" type="search" placeholder="搜索事件／scaffold／contig" aria-label="搜索变化事件"><select id="event-type" aria-label="变化类型"><option value="">所有变化类型</option></select><label><input id="include-renames" type="checkbox">包含等价重命名</label><button id="export-events">导出筛选事件 TSV</button></div><p id="event-count" class="muted" aria-live="polite"></p>
+<div class="table-wrap"><table><thead><tr><th>事件</th><th>类型</th><th>调整前</th><th>调整后</th><th>涉及长度</th><th>解释</th></tr></thead><tbody id="event-rows"></tbody></table></div>
+<p class="muted">事件长度可能重叠，不能相加。连接事件的长度是两侧关联片段的总长度，不是断点长度。跨 scaffold 变化相对于 reciprocal largest overlap 锚点判断；复杂重组及无锚点区域保留解释限制。</p></section>
+<section><h2>原始区间对应表</h2><div class="controls"><input id="segment-search" type="search" placeholder="搜索 contig／scaffold／区间编号" aria-label="搜索原始区间"><select id="segment-status" aria-label="对应状态"><option value="">所有对应状态</option><option value="unique">唯一对应</option><option value="ambiguous">歧义对应</option><option value="before_only">仅调整前找到</option><option value="after_only">仅调整后找到</option></select><label><input id="structural-only" type="checkbox">仅内部／归属差异及 QC</label><button id="export-segments">导出筛选区间 TSV</button></div><p id="segment-count" class="muted" aria-live="polite"></p>
+<div class="table-wrap"><table><thead><tr><th>原始 contig 区间</th><th>来源</th><th>长度</th><th>调整前</th><th>调整后</th><th>差异标记</th><th>最终分配</th></tr></thead><tbody id="segment-rows"></tbody></table></div>
+<div class="controls"><button id="previous">上一页</button><span id="page-info"></span><button id="next">下一页</button></div></section>
+<section><h2>选中记录</h2><p>表中坐标均为 1-based inclusive。方向未知时，局部显示坐标采用正向假设并标记，不用于方向和相邻连接推断。</p><div id="details">点击事件、表格行或图中的片段查看详情。</div></section>
+<section><h2>输入与质量检查</h2><div id="quality"></div><p class="muted">区间覆盖比例基于原始坐标并集，重复放置不重复计入。AGP 匹配假设两个版本的同名 component 属于同一原始序列；不验证碱基序列相同。若 ID 已改变，须先提供可靠的原始区间映射，不能通过名称相似度自动连接。</p></section>
+<section class="downloads"><h2>导出文件</h2><!--DOWNLOADS--><p class="muted">本 HTML 自带数据和交互，离线可打开。下载外部 TSV／PDF／JSON 文件时，请与报告保存在同一目录。</p></section>
+</main>
+<script>
+const D=/*DATA_PAYLOAD*/null;
+const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>Number(n).toLocaleString('en-US'), mb=n=>(n/1e6).toFixed(3)+' Mb', label=t=>t.split('+').map(x=>D.labels[x]||x).join(' + ');
+const atomById=new Map(D.atoms.map(a=>[a.segment_id,a]));
+const beforeOrder=Object.keys(D.before_lengths),afterOrder=Object.keys(D.after_lengths);
+const anchor=new Map(D.scaffold_map.filter(x=>x.reciprocal_anchor).map(x=>[x.before_object,x.after_object]));
+let selected=new Set(),bs=D.default_before.slice(),as=D.default_after.slice(),page=0,eventRows=[],segmentRows=[];
+$('paths').textContent='调整前：'+D.before_path+'\n调整后：'+D.after_path;
+const s=D.summary;
+const cards=[['可唯一追踪',mb(s.unique_bp)],['前 → 后 scaffold',s.before_objects+' → '+s.after_objects],['整条反向',fmt(s.whole_scaffold_reverse)],['scaffold 相对排序改变',fmt(s.scaffold_order_changed)],['内部／归属变化区间',mb(s.changed_unique_bp)],['新增／消失连接',fmt(s.junction_added)+' / '+fmt(s.junction_removed)],['需要复核的项目',fmt(s.review_items)]];
+$('summary').innerHTML=cards.map(([title,value])=>'<div class="card"><span>'+esc(title)+'</span><strong>'+esc(value)+'</strong></div>').join('');
+const option=(value,text)=>{const o=document.createElement('option');o.value=value;o.textContent=text;return o;};
+const P=D.agp_provenance,comparisonByName=new Map(P.method_comparison.map(r=>[r.seq_id,r]));
+const methodLabels={not_available:'尚无 minimap2 数据',not_selected:'未选入主要染色体',agree:'分组一致',one_unresolved:'一方未确定',different_source:'来源分组不同',label_mismatch:'来源标签不一致'};
+$('source-first-head').textContent=P.labels[0]+' 实际组成';$('source-second-head').textContent=P.labels[1]+' 实际组成';
+$('provenance-intro').textContent='选择 '+P.selected.length+' 条主要染色体。AGP 分组模式：'+P.assignment_mode+'；优势来源阈值 '+(P.dominance*100).toFixed(0)+'%。比例的分母为非 gap 序列长度。原始 hifiasm ID 表示 contig，不等同于原始染色体编号。';
+$('partition-cards').innerHTML=P.partition_summary.map(r=>'<div class="card"><span>'+esc(r.source)+'</span><strong>'+r.n_sequences+' 条</strong><span>'+mb(r.total_bp)+'</span></div>').join('');
+[...P.labels,'unresolved','unplaced'].forEach(l=>$('provenance-source').append(option(l,l)));
+P.selected.forEach(n=>$('origin-select').append(option(n,n)));
+function renderOrigin(){const key=$('origin-select').value,svg=D.origin_svgs[key];$('origin-diagram').innerHTML=svg||'<p>此记录没有可绘制的原始区间。</p>';const image=$('origin-diagram').querySelector('svg');if(image){image.style.width='100%';image.style.minWidth='1000px';image.style.height='auto';}
+ $('origin-diagram').querySelectorAll('[data-segment]').forEach(el=>el.addEventListener('click',()=>{const atom=atomById.get(el.dataset.segment);showDetails(atom);$('segment-search').value=atom.source_contig;page=0;filterSegments();}));}
+function selectChromosome(name){const row=P.chromosomes.find(r=>r.seq_id===name),parts=P.components.filter(p=>p.seq_id===name),comparison=comparisonByName.get(name);
+ $('component-detail').innerHTML='<h3>'+esc(name)+'：原始组成</h3><p>AGP 独立来源：'+esc(row.independent_assignment)+'；最终 AGP 分组：'+esc(row.assignment)+'；状态：'+esc(row.composition_status)+'。</p><div class="table-wrap"><table><thead><tr><th>原始 hifiasm contig</th><th>来源</th><th>原始区间</th><th>当前区间／方向</th><th>调整前 scaffold／区间</th></tr></thead><tbody>'+parts.map(p=>'<tr><td class="code">'+esc(p.source_contig)+'</td><td>'+esc(p.source_hap)+'</td><td>'+fmt(p.source_start)+'–'+fmt(p.source_end)+'</td><td>'+fmt(p.start)+'–'+fmt(p.end)+' ('+esc(p.strand)+')</td><td>'+esc(p.original_scaffold||'[未唯一确定]')+(p.before_start?' : '+fmt(p.before_start)+'–'+fmt(p.before_end):'')+'</td></tr>').join('')+'</tbody></table></div><p>AGP 与 minimap2：'+esc(methodLabels[comparison.comparison_status]||comparison.comparison_status)+'。比对的两来源覆盖可重叠，不能当成实际拼接来源比例。</p>';
+ if(D.origin_svgs[name]){$('origin-select').value=name;renderOrigin();}
+ else{$('origin-select').value='all';$('origin-diagram').innerHTML='<p>该记录未选入主要染色体来源图；完整原始组成已在上方展开。</p>';}
+ showDetails({agp:row,minimap_comparison:comparison,components:parts});}
+function provenanceTable(){const query=$('provenance-search').value.toLowerCase(),source=$('provenance-source').value,unplaced=$('show-unplaced').checked;
+ const rows=P.chromosomes.filter(r=>(unplaced||r.selected)&&(!source||r.assignment===source)&&(!query||r.seq_id.toLowerCase().includes(query)||P.components.some(p=>p.seq_id===r.seq_id&&p.source_contig.toLowerCase().includes(query))));
+ $('provenance-count').textContent='显示 '+rows.length+' 条；主要染色体 '+P.selected.length+' 条。点击查看完整原始组成。';
+ $('provenance-rows').innerHTML=rows.map(r=>{const parts=P.components.filter(p=>p.seq_id===r.seq_id),maximum=Math.max(...P.chromosomes.filter(x=>x.selected).map(x=>x.length)),width=r.length/maximum*360;
+ const svg='<svg viewBox="0 0 360 20" style="width:240px;height:20px"><rect width="'+width+'" height="16" y="2" fill="#eef1f5"/>'+parts.map(p=>'<rect x="'+((p.start-1)/maximum*360)+'" y="2" width="'+(p.length_bp/maximum*360)+'" height="16" fill="'+(D.colors[p.source_hap]||'#a5abb3')+'"><title>'+esc(p.source_contig+' | '+p.source_hap+' | '+fmt(p.length_bp)+' bp')+'</title></rect>').join('')+'</svg>';
+ const comparison=comparisonByName.get(r.seq_id);
+ return '<tr data-chromosome="'+esc(r.seq_id)+'"><td>'+esc(r.seq_id)+'<br><small>'+mb(r.length)+'</small></td><td>'+svg+'</td>'+P.labels.map(l=>'<td>'+fmt(r[l+'_bp'])+' bp<br>'+((r[l+'_fraction']||0)*100).toFixed(3)+'%</td>').join('')+'<td>'+esc(r.assignment)+'</td><td>'+esc(r.composition_status)+'<br>'+esc(r.original_scaffolds.join(', '))+'</td><td>'+esc(comparison.minimap_assignment||'未提供')+'</td><td>'+esc(methodLabels[comparison.comparison_status]||comparison.comparison_status)+'</td></tr>';}).join('');
+ $('provenance-rows').querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>selectChromosome(tr.dataset.chromosome)));}
+['provenance-search','provenance-source','show-unplaced'].forEach(id=>$(id).addEventListener(id==='provenance-search'?'input':'change',provenanceTable));
+$('origin-select').onchange=renderOrigin;$('export-origin-svg').onclick=()=>{const svg=$('origin-diagram').querySelector('svg');if(svg)download('hifiasm_source_correspondence.svg',svg.outerHTML,'image/svg+xml;charset=utf-8');};
+function methodTable(){const available=P.method_comparison.filter(r=>r.selected&&r.minimap_assignment),differences=$('method-differences').checked;
+ const supportRows=available.filter(r=>P.labels.every(l=>r['minimap_'+l+'_covered_bp']!=='')),supportDifferences=supportRows.filter(r=>P.labels.some(l=>Number(r['agp_'+l+'_bp'])!==Number(r['minimap_'+l+'_covered_bp']))).length,groupDifferences=available.filter(r=>r.comparison_status!=='agree').length;
+ $('method-intro').textContent=available.length?'已载入 '+available.length+' 条主要染色体的 minimap2 结果：最终分组不同 '+groupDifferences+' 条；在记录覆盖长度的 '+supportRows.length+' 条中，实际组成 bp 与比对覆盖 bp 不相等的有 '+supportDifferences+' 条。第一／第二来源为 '+P.labels.join(' / ')+'；AGP 为实际拼接来源，minimap2 为相似性覆盖，两来源覆盖允许重叠。':'尚未提供 minimap2 的 PAF 或 assignment.tsv，当前不能判断实际差异。可用 --minimap-assignment，或同时提供 --hap1-paf 与 --hap2-paf 载入对照；此处不会推断或伪造差异。';
+ const rows=available.filter(r=>!differences||r.comparison_status!=='agree'||r.independent_labels_agree===false);
+ $('method-rows').innerHTML=rows.map(r=>'<tr><td>'+esc(r.seq_id)+'</td>'+P.labels.map(l=>'<td>'+fmt(r['agp_'+l+'_bp'])+'</td>').join('')+P.labels.map(l=>'<td>'+(r['minimap_'+l+'_covered_bp']===''?'未记录':fmt(r['minimap_'+l+'_covered_bp']))+'</td>').join('')+'<td>'+esc(r.agp_independent_assignment+' / '+r.minimap_independent_assignment)+'</td><td>'+esc(r.agp_assignment+' / '+r.minimap_assignment)+'</td><td>'+esc(methodLabels[r.comparison_status]||r.comparison_status)+(r.independent_labels_agree===false?'；独立来源不同':'')+'</td></tr>').join('');}
+$('method-differences').onchange=methodTable;
+$('track-select').append(option('','选择调整前 scaffold…'));beforeOrder.forEach(n=>$('track-select').append(option(n,n+' · '+mb(D.before_lengths[n]))));
+[...new Set(D.events.map(e=>e.type))].sort().forEach(t=>$('event-type').append(option(t,label(t))));
+function neighborhood(before,after){let b=new Set(before),a=new Set(after),change=true;while(change){change=false;for(const atom of D.atoms){if(atom.before.some(p=>b.has(p.object))||atom.after.some(p=>a.has(p.object))){for(const p of atom.before)if(!b.has(p.object)){b.add(p.object);change=true;}for(const p of atom.after)if(!a.has(p.object)){a.add(p.object);change=true;}}}}return[beforeOrder.filter(n=>b.has(n)),afterOrder.filter(n=>a.has(n))];}
+function setView(b,a,ids=[]){[bs,as]=neighborhood(b,a);selected=new Set(ids);draw();}
+function draw(){
+ let after=as.slice();if($('align-tracks').checked){const rank=new Map(bs.map((b,i)=>[anchor.get(b),i]));after.sort((a,b)=>(rank.get(a)??1e9)-(rank.get(b)??1e9));}
+ const names=[bs,after],lens=[D.before_lengths,D.after_lengths],desired=Math.max(400,Math.max(bs.length,after.length,1)*28),W=1240,H=desired+160;
+ let lo=0,hi=desired/Math.max(...Object.values(lens[0]),...Object.values(lens[1]));for(let i=0;i<60;i++){const scale=(lo+hi)/2,extent=Math.max(...names.map((ns,j)=>ns.reduce((sum,n)=>sum+Math.max(12,lens[j][n]*scale)+14,0)));if(extent>desired)hi=scale;else lo=scale;}
+ const positions=[new Map(),new Map()];names.forEach((ns,i)=>{let cursor=98;ns.forEach(n=>{const body=lens[i][n]*lo,reserve=Math.max(12,body);positions[i].set(n,[cursor+(reserve-body)/2,body]);cursor+=reserve+14;});});
+ let svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="AGP before and after source correspondence"><rect width="100%" height="100%" fill="white"/><style>text{font-family:Arial,sans-serif;fill:#253247}.link:hover{fill-opacity:.8!important;stroke:#253247}.faded{opacity:.12}.selected{stroke:#8a3fab;stroke-width:1.2;fill-opacity:.65!important}</style><text x="24" y="28" font-size="18" font-weight="bold">AGP curation correspondence</text><text x="24" y="49" font-size="12">Before '+bs.length+'/'+beforeOrder.length+' tracks · After '+after.length+'/'+afterOrder.length+' tracks · shared bp scale</text><text x="290" y="79" font-size="13" text-anchor="middle">Before</text><text x="950" y="79" font-size="13" text-anchor="middle">After</text>';
+ const cls=atom=>selected.size?(selected.has(atom.segment_id)?' selected':' faded'):'';
+ for(const atom of D.atoms){if(atom.mapping_status!=='unique')continue;const bp=atom.before[0],ap=atom.after[0];if(!positions[0].has(bp.object)||!positions[1].has(ap.object))continue;
+ const ys=[bp,ap].map((p,i)=>{const y=positions[i].get(p.object)[0],ends=[y+(p.start-1)*lo,y+p.end*lo];return p.strand==='-'?ends.reverse():ends;});const [[b0,b1],[a0,a1]]=ys;
+ const tip=atom.source_contig+':'+atom.source_start+'-'+atom.source_end+' | '+fmt(atom.length_bp)+' bp | '+(atom.flags.map(label).join(', ')||'无内部结构差异');
+ svg+='<path data-segment="'+atom.segment_id+'" class="link'+cls(atom)+'" d="M 298 '+b0+' C 520 '+b0+',720 '+a0+',942 '+a0+' L 942 '+a1+' C 720 '+a1+',520 '+b1+',298 '+b1+' Z" fill="'+D.colors[atom.source_hap]+'" fill-opacity=".24"><title>'+esc(tip)+'</title></path>';}
+ for(let i=0;i<2;i++){const version=i?'after':'before',x=i?950:290;for(const[n,[top,body]]of positions[i]){svg+='<rect x="'+(x-8)+'" y="'+top+'" width="16" height="'+body+'" fill="#eef1f5" stroke="#566274" stroke-width=".6"/><text x="'+(i?x+18:x-18)+'" y="'+(top+body/2+3.5)+'" font-size="11" text-anchor="'+(i?'start':'end')+'">'+esc(n+' | '+mb(lens[i][n]))+'</text>';}
+ for(const atom of D.atoms)for(const p of atom[version]){if(!positions[i].has(p.object))continue;const top=positions[i].get(p.object)[0]+(p.start-1)*lo,body=atom.length_bp*lo;
+ const tip=atom.source_contig+':'+atom.source_start+'-'+atom.source_end+' → '+p.object+':'+p.start+'-'+p.end+' ('+p.strand+') | '+atom.mapping_status;
+ svg+='<rect data-segment="'+atom.segment_id+'" class="'+cls(atom)+'" x="'+(x-7)+'" y="'+top+'" width="14" height="'+body+'" fill="'+D.colors[atom.source_hap]+'" stroke="'+(atom.flags.length?'#8a3fab':'#566274')+'" stroke-width=".5"><title>'+esc(tip)+'</title></rect>';
+ if(body>14&&['+','-'].includes(p.strand)){const y=top+body/2,d=p.strand==='+'?1:-1;svg+='<path pointer-events="none" d="M '+(x-3)+' '+(y-3*d)+' L '+x+' '+(y+3*d)+' L '+(x+3)+' '+(y-3*d)+'" fill="none" stroke="white" stroke-width="1.1"/>';}}}
+ Object.entries(D.colors).forEach(([name,color],i)=>svg+='<rect x="'+(24+i*145)+'" y="'+(H-44)+'" width="12" height="12" fill="'+color+'"/><text x="'+(42+i*145)+'" y="'+(H-34)+'" font-size="12">'+esc(name)+'</text>');
+ svg+='<text x="24" y="'+(H-12)+'" font-size="11">Only unique interval links are drawn. Source colors are not final assignments.</text></svg>';
+ $('diagram').innerHTML=svg;$('view-info').textContent='当前显示 '+bs.length+' / '+beforeOrder.length+' 条调整前 scaffold，'+after.length+' / '+afterOrder.length+' 条调整后 scaffold。'+(selected.size?'高亮 '+selected.size+' 个原始区间。':'');
+ $('diagram').querySelectorAll('[data-segment]').forEach(el=>el.addEventListener('click',()=>selectAtom(atomById.get(el.dataset.segment))));
+}
+function showDetails(value){$('details').textContent=JSON.stringify(value,null,2);}
+function selectAtom(atom){selected=new Set([atom.segment_id]);showDetails(atom);draw();$('segment-search').value=atom.source_contig;page=0;filterSegments();}
+const place=ps=>ps.length?ps.map(p=>p.object+':'+fmt(p.start)+'–'+fmt(p.end)+' ('+p.strand+')').join('; '):'—';
+function filterEvents(){const query=$('event-search').value.toLowerCase(),type=$('event-type').value,renames=$('include-renames').checked;
+ eventRows=D.events.filter(e=>(renames||e.type!=='equivalent_scaffold_rename'||type==='equivalent_scaffold_rename')&&(!type||e.type===type)&&(!query||JSON.stringify(e).toLowerCase().includes(query)||e.segment_ids.some(id=>atomById.get(id).source_contig.toLowerCase().includes(query))));
+ $('event-count').textContent='显示 '+eventRows.length+' / '+D.events.length+' 项。点击一行定位相关轨道；默认隐藏等价重命名。';
+ $('event-rows').innerHTML=eventRows.map(e=>'<tr data-event="'+e.event_id+'"><td>'+esc(e.event_id)+'</td><td>'+esc(label(e.type))+'</td><td>'+esc(e.before_objects.join(', '))+'</td><td>'+esc(e.after_objects.join(', '))+'</td><td>'+mb(e.length_bp)+'</td><td>'+esc(e.interpretation)+'</td></tr>').join('');
+ $('event-rows').querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>{const e=eventRows.find(x=>x.event_id===tr.dataset.event);setView(e.before_objects,e.after_objects,e.segment_ids);showDetails(e);$('event-rows').querySelectorAll('tr').forEach(row=>row.classList.toggle('active',row===tr));$('diagram').scrollIntoView({block:'start',behavior:'smooth'});}));}
+function filterSegments(){const query=$('segment-search').value.toLowerCase(),status=$('segment-status').value,changes=$('structural-only').checked;
+ segmentRows=D.atoms.filter(a=>(!status||a.mapping_status===status)&&(!changes||a.flags.length)&&(!query||JSON.stringify(a).toLowerCase().includes(query)));
+ const pages=Math.max(1,Math.ceil(segmentRows.length/50));page=Math.min(page,pages-1);const rows=segmentRows.slice(page*50,page*50+50);
+ $('segment-count').textContent='显示 '+segmentRows.length+' / '+D.atoms.length+' 个原始区间。';$('page-info').textContent=(page+1)+' / '+pages;$('previous').disabled=page===0;$('next').disabled=page===pages-1;
+ $('segment-rows').innerHTML=rows.map(a=>'<tr data-segment="'+a.segment_id+'"><td class="code">'+esc(a.source_contig+':'+fmt(a.source_start)+'–'+fmt(a.source_end))+'</td><td>'+esc(a.source_hap)+'</td><td>'+mb(a.length_bp)+'</td><td>'+esc(place(a.before))+'</td><td>'+esc(place(a.after))+'</td><td>'+esc(a.flags.map(label).join('; ')||'无内部／归属差异')+'</td><td>'+esc(a.after_assignment||'未提供')+'</td></tr>').join('');
+ $('segment-rows').querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>{const a=atomById.get(tr.dataset.segment);setView(a.before.map(p=>p.object),a.after.map(p=>p.object),[a.segment_id]);showDetails(a);}));}
+function download(name,content,type){const url=URL.createObjectURL(new Blob([content],{type})),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function tsv(rows,fields){const cell=value=>{const s=typeof value==='object'?JSON.stringify(value):String(value??'');return /[\t\n\r"]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};return fields.join('\t')+'\n'+rows.map(r=>fields.map(k=>cell(r[k])).join('\t')).join('\n')+'\n';}
+$('overview').onclick=()=>{selected.clear();bs=D.default_before.slice();as=D.default_after.slice();draw();};
+$('all-tracks').onclick=()=>{selected.clear();bs=beforeOrder.slice();as=afterOrder.slice();draw();};
+$('changed-tracks').onclick=()=>{const events=D.events.filter(e=>e.type!=='equivalent_scaffold_rename');setView(events.flatMap(e=>e.before_objects),events.flatMap(e=>e.after_objects));};
+$('track-select').onchange=()=>{if($('track-select').value)setView([$ ('track-select').value],[]);};
+$('align-tracks').onchange=draw;$('export-svg').onclick=()=>download('curation_current_view.svg',$('diagram').querySelector('svg').outerHTML,'image/svg+xml;charset=utf-8');
+['event-search','event-type','include-renames'].forEach(id=>$(id).addEventListener(id==='event-search'?'input':'change',filterEvents));
+['segment-search','segment-status','structural-only'].forEach(id=>$(id).addEventListener(id==='segment-search'?'input':'change',()=>{page=0;filterSegments();}));
+$('previous').onclick=()=>{page--;filterSegments();};$('next').onclick=()=>{page++;filterSegments();};
+$('export-events').onclick=()=>download('filtered_curation_events.tsv',tsv(eventRows,['event_id','type','before_objects','after_objects','length_bp','segment_ids','interpretation']),'text/tab-separated-values;charset=utf-8');
+$('export-segments').onclick=()=>download('filtered_segment_correspondence.tsv',tsv(segmentRows,['segment_id','source_contig','source_start','source_end','length_bp','source_hap','mapping_status','before','after','flags','events','after_assignment']),'text/tab-separated-values;charset=utf-8');
+$('quality').innerHTML='<p>原始坐标并集 '+fmt(s.source_union_bp)+' bp；唯一对应 '+fmt(s.unique_bp)+' bp；歧义 '+fmt(s.ambiguous_bp)+' bp；仅前版本 '+fmt(s.before_only_bp)+' bp；仅后版本 '+fmt(s.after_only_bp)+' bp。</p><p>调整前／后 component 总长度：'+fmt(s.before_component_bp)+' / '+fmt(s.after_component_bp)+' bp；gap 总长度：'+fmt(s.before_gap_bp)+' / '+fmt(s.after_gap_bp)+' bp。</p>'+(D.qc.length?'<ul>'+D.qc.map(q=>'<li>'+esc(q.severity+' | '+q.code+' | '+q.segment_id+' | '+q.detail)+'</li>').join('')+'</ul>':'<p>未发现重复来源区间、未知方向或其他映射复核项。</p>');
+draw();filterEvents();filterSegments();renderOrigin();provenanceTable();methodTable();
+</script></body></html>

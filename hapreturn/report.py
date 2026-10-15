@@ -1,6 +1,7 @@
 """Regenerate figures from an existing result without rerunning alignments."""
 import argparse
 import csv
+import json
 import shutil
 import sys
 from collections import defaultdict
@@ -55,12 +56,32 @@ def main(argv=None):
                 hits.append(hit)
                 intervals[label][hit.target].append((hit.start, hit.end))
         args.out_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("assignment.tsv", "summary.tsv", "group_qc.tsv", "homolog_groups.tsv"):
+        for name in ("assignment.tsv", "summary.tsv", "group_qc.tsv", "homolog_groups.tsv", "minimap_assignment.tsv", "evidence_comparison.tsv",
+                     "hybrid_intervals.tsv", "evidence_config.json", "evidence_report.html"):
             source, target = args.result_dir / name, args.out_dir / name
             if source.is_file() and source.resolve() != target.resolve():
                 shutil.copyfile(source, target)
+        curation_link = False
+        saved_agp = args.result_dir / "curation" / "agp_comparison.json"
+        if saved_agp.is_file():
+            from .agp_cli import generate_comparison
+            result = json.loads(saved_agp.read_text(encoding="utf-8"))
+            if result.get("schema_version") != 1 or result.get("after_lengths") != all_records:
+                raise ValueError("Saved AGP comparison schema or post-curation lengths disagree with result FASTAs")
+            for atom in result["atoms"]:
+                if len(atom["after"]) == 1:
+                    atom["after_assignment"] = assignments.get(atom["after"][0]["object"], "unplaced")
+            from .agp_provenance import attach_provenance, read_alignment_assignments
+            options = result.get("agp_provenance", {})
+            attach_provenance(result, options.get("labels", labels), list(records), options.get("dominance",.60),
+                              options.get("min_known_fraction",.25), options.get("assignment_mode","provenance"),
+                              options.get("groups",{}), options.get("ploidy"),
+                              read_alignment_assignments(args.result_dir / ("minimap_assignment.tsv" if (args.result_dir / "minimap_assignment.tsv").exists() else "assignment.tsv"), all_records))
+            result.pop("sequence_export", None)  # Refresh figures, not optional sequence copies.
+            generate_comparison(result, args.out_dir / "curation")
+            curation_link = True
         make_report(args.out_dir, labels, records, intervals, assignments, all_records,
-                    args.min_covered_fraction, args.dominance, args.plot_window_size, hits)
+                    args.min_covered_fraction, args.dominance, args.plot_window_size, hits, curation_link=curation_link)
         print(f"Refreshed report for {len(records)} chromosomes: {args.out_dir}")
         return 0
     except (OSError, ValueError, KeyError) as exc:
